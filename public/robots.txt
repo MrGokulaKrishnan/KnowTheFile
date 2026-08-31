@@ -1,0 +1,32 @@
+﻿# robots.txt for KnowTheFile (https://knowthefile.web.app)
+User-agent: *
+Allow: /
+Allow: /tools
+Allow: /tools/*
+Allow: /pricing
+Allow: /about
+Allow: /contact
+Allow: /help
+Allow: /privacy
+Allow: /terms
+Allow: /security
+Allow: /cookies
+Allow: /disclaimer
+
+# Disallow private user workspace and auth flows
+Disallow: /dashboard
+Disallow: /files
+Disallow: /history
+Disallow: /settings
+Disallow: /profile
+Disallow: /billing
+Disallow: /onboarding
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+
+# Host and Sitemap
+Host: https://knowthefile.web.app
+Sitemap: https://knowthefile.web.app/sitemap.xml

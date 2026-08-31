@@ -26,12 +26,65 @@ import {
 
 const categories = ['All', 'Organize', 'Create', 'Edit', 'Convert', 'Secure'] as const
 
-function PageMeta({ title, description }: { title: string; description: string }) {
+interface PageMetaProps {
+  title: string
+  description: string
+  canonicalPath?: string
+  keywords?: string
+  schemaJson?: object
+}
+
+function PageMeta({ title, description, canonicalPath = '/', keywords, schemaJson }: PageMetaProps) {
   useEffect(() => {
-    document.title = `${title} — KnowTheFile`
-    const meta = document.querySelector('meta[name="description"]')
-    meta?.setAttribute('content', description)
-  }, [title, description])
+    const fullTitle = title.includes('KnowTheFile') ? title : `${title} — KnowTheFile`
+    document.title = fullTitle
+
+    const updateMeta = (name: string, content: string, isProperty = false) => {
+      const selector = isProperty ? `meta[property="${name}"]` : `meta[name="${name}"]`
+      let el = document.querySelector(selector)
+      if (!el) {
+        el = document.createElement('meta')
+        if (isProperty) el.setAttribute('property', name)
+        else el.setAttribute('name', name)
+        document.head.appendChild(el)
+      }
+      el.setAttribute('content', content)
+    }
+
+    updateMeta('title', fullTitle)
+    updateMeta('description', description)
+    if (keywords) updateMeta('keywords', keywords)
+
+    const fullCanonical = `https://knowthefile.web.app${canonicalPath.startsWith('/') ? canonicalPath : `/${canonicalPath}`}`
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link')
+      canonicalLink.setAttribute('rel', 'canonical')
+      document.head.appendChild(canonicalLink)
+    }
+    canonicalLink.setAttribute('href', fullCanonical)
+
+    updateMeta('og:title', fullTitle, true)
+    updateMeta('og:description', description, true)
+    updateMeta('og:url', fullCanonical, true)
+    updateMeta('twitter:title', fullTitle)
+    updateMeta('twitter:description', description)
+    updateMeta('twitter:url', fullCanonical)
+
+    let scriptTag = document.getElementById('page-schema') as HTMLScriptElement | null
+    if (schemaJson) {
+      if (!scriptTag) {
+        scriptTag = document.createElement('script')
+        scriptTag.id = 'page-schema'
+        scriptTag.type = 'application/ld+json'
+        document.head.appendChild(scriptTag)
+      }
+      scriptTag.textContent = JSON.stringify(schemaJson)
+    } else if (scriptTag) {
+      scriptTag.remove()
+    }
+  }, [title, description, canonicalPath, keywords, schemaJson])
+
   return null
 }
 
@@ -303,8 +356,10 @@ function HomePage() {
   return (
     <>
       <PageMeta
-        title="Every File, One Liquid Glass Workspace"
-        description="Process, organize, convert and edit documents with 100% private browser acceleration."
+        title="KnowTheFile — 100% Private, On-Device PDF & Document Suite"
+        description="Merge, split, compress, edit, convert, and secure PDF documents directly inside your browser. 100% private, client-side WebAssembly execution with zero server uploads."
+        canonicalPath="/"
+        keywords="PDF tools, merge PDF, split PDF, compress PDF, PDF editor online, convert PDF, edit PDF, free PDF tools, private PDF tools, on-device document processing, knowthefile"
       />
 
       {/* Hero Section */}
@@ -562,8 +617,10 @@ function ToolsPage() {
   return (
     <section className="page-section tools-page">
       <PageMeta
-        title="Document Tools Directory"
-        description="Comprehensive suite of browser-based PDF tools with zero cloud uploads."
+        title="All 18 PDF & Document Tools — KnowTheFile"
+        description="Browse the complete directory of 18 private, browser-accelerated PDF tools. Merge, split, compress, edit, sign, convert, and protect documents."
+        canonicalPath="/tools"
+        keywords="pdf tools directory, all pdf tools, merge pdf, split pdf, compress pdf, convert docx to pdf, image to pdf, pdf editor"
       />
       <p className="eyebrow">DOCUMENT TOOLKIT</p>
       <h1>
@@ -662,9 +719,51 @@ function ToolsPage() {
 
 function ToolPage() {
   const { toolId } = useParamsTyped()
-  if (toolId === 'pdf-editor') return <PDFEditorPage />
+  if (toolId === 'pdf-editor') {
+    return (
+      <>
+        <PageMeta
+          title="Free Online PDF Editor — Annotate, Add Text & Canvas Studio"
+          description="Edit PDF files directly in your browser. Add text notes, overlays, and annotations privately without server uploads."
+          canonicalPath="/tools/pdf-editor"
+          keywords="online pdf editor, edit pdf free, annotate pdf, add text to pdf, private pdf editor"
+          schemaJson={{
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "KnowTheFile PDF Editor",
+            "operatingSystem": "All",
+            "applicationCategory": "UtilitiesApplication",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "description": "Interactive online studio to edit, annotate, and add text to PDF files directly in your browser."
+          }}
+        />
+        <PDFEditorPage />
+      </>
+    )
+  }
   const tool = findTool(toolId ?? '')
-  return tool ? <ToolRunner tool={tool} /> : <NotFoundPage />
+  if (!tool) return <NotFoundPage />
+
+  return (
+    <>
+      <PageMeta
+        title={`${tool.name} — Free Online Tool (100% Private)`}
+        description={`${tool.description} Fast, secure, client-side execution with zero cloud storage uploads.`}
+        canonicalPath={`/tools/${tool.id}`}
+        keywords={`${tool.name}, ${tool.name.toLowerCase()} online, free ${tool.name.toLowerCase()}, private ${tool.name.toLowerCase()}, knowthefile`}
+        schemaJson={{
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "name": `KnowTheFile ${tool.name}`,
+          "operatingSystem": "All",
+          "applicationCategory": "UtilitiesApplication",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "description": tool.description
+        }}
+      />
+      <ToolRunner tool={tool} />
+    </>
+  )
 }
 
 function useParamsTyped() {
@@ -677,8 +776,10 @@ function PricingPage() {
   return (
     <section className="page-section pricing-page">
       <PageMeta
-        title="Pricing Architecture"
-        description="Clear, transparent pricing plans with zero hidden fees for KnowTheFile."
+        title="Transparent Pricing & Architecture — KnowTheFile"
+        description="Explore KnowTheFile pricing. All 13 core on-device document tools are 100% free and client-side today."
+        canonicalPath="/pricing"
+        keywords="free pdf tools, pdf editor pricing, document processing cost, knowthefile plans"
       />
       <p className="eyebrow">TRANSPARENT ARCHITECTURE</p>
       <h1>Simple plans. Clear limits.</h1>
@@ -1201,8 +1302,46 @@ function SupportPage() {
 }
 
 function HelpPage() {
+  const faqSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'Where does document processing happen?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'All tools marked Client-Side process entirely in your active browser tab using WebAssembly and client-side canvas engines. Your documents are never uploaded to any remote server.'
+        }
+      },
+      {
+        '@type': 'Question',
+        name: 'Why was my file rejected?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'A file may be password-encrypted, corrupt, larger than the 100 MB browser buffer limit, or require dedicated DOCX backend converters.'
+        }
+      },
+      {
+        '@type': 'Question',
+        name: 'Can I save documents to cloud storage?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Cloud storage is enabled when a Firebase Storage bucket is connected. KnowTheFile does not store simulated files without real encryption.'
+        }
+      }
+    ]
+  }
+
   return (
     <section className="page-section">
+      <PageMeta
+        title="Help & FAQ Center — KnowTheFile"
+        description="Frequently asked questions, performance guides, and troubleshooting for KnowTheFile browser-accelerated PDF tools."
+        canonicalPath="/help"
+        keywords="knowthefile help, pdf tools faq, browser pdf processing guide"
+        schemaJson={faqSchema}
+      />
       <p className="eyebrow">HELP CENTER</p>
       <h1>Answers for your document workflows.</h1>
       <div style={{ display: 'grid', gap: '14px', maxWidth: '820px', marginTop: '40px' }}>
@@ -1238,6 +1377,12 @@ function HelpPage() {
 function ContactPage() {
   return (
     <section className="page-section">
+      <PageMeta
+        title="Contact & Technical Support — KnowTheFile"
+        description="Get in touch with the KnowTheFile team for technical support, feature feedback, or enterprise inquiries."
+        canonicalPath="/contact"
+        keywords="contact knowthefile, pdf tool support, enterprise document processing"
+      />
       <p className="eyebrow">CONTACT ENGINEERING</p>
       <h1>Get in touch.</h1>
       <p className="page-lede">
@@ -1272,7 +1417,11 @@ function LegalPage({ slug }: { slug: string }) {
 
   return (
     <article className="page-section" style={{ maxWidth: '840px' }}>
-      <PageMeta title={name} description={`${name} documentation for KnowTheFile.`} />
+      <PageMeta
+        title={`${name} — Trust & Compliance`}
+        description={`${name} terms and privacy documentation for KnowTheFile.`}
+        canonicalPath={`/${slug}`}
+      />
       <p className="eyebrow">TRUST & COMPLIANCE</p>
       <h1>{name}</h1>
       <p style={{ color: '#737373', fontSize: '12px', marginBottom: '24px' }}>

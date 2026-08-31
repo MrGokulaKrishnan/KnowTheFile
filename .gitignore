@@ -62,8 +62,52 @@ node_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# dotenv environment variables file & secrets (keep .env.example)
 .env
+.env.*
+!.env.example
+*.env.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Secrets, private keys & service accounts
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*serviceAccount*.json
+*service-account*.json
+google-services.json
+GoogleService-Info.plist
 
 # dataconnect generated files
 .dataconnect
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# IDE & Editor files
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swo
+*.swp
+
+# Temporary scratch directories
+scratch/

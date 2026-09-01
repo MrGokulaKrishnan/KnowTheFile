@@ -1440,6 +1440,13 @@ h1 { letter-spacing: -0.04em; }
   font-weight: 700;
 }
 
+.tool-info-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 210, 26, 0.05);
+  border: 1px solid rgba(255, 210, 26, 0.2);
+}
+
 /* Settings Sidebar */
 .settings-card {
   display: grid;

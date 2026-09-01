@@ -1,10 +1,16 @@
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
 import type { PageRangeResult, ProcessedDocument } from '../types'
+import { pdfToDocx, docxToPdf } from './wordConverterService'
 
 export const MAX_FILE_BYTES = 100 * 1024 * 1024
 
 const legalPdf = (file: File) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
 const imageType = (file: File) => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+const legalWord = (file: File) =>
+  file.name.toLowerCase().endsWith('.docx') ||
+  file.name.toLowerCase().endsWith('.doc') ||
+  file.type.includes('word') ||
+  file.type.includes('officedocument')
 const outputName = (name: string, suffix: string) => `${name.replace(/\.[^.]+$/, '')}-${suffix}.pdf`
 const output = async (pdf: PDFDocument, fileName: string, inputBytes: number): Promise<ProcessedDocument> => {
   const bytes = await pdf.save()
@@ -35,12 +41,16 @@ async function embedSupportedImage(pdf: PDFDocument, file: File) {
   } finally { URL.revokeObjectURL(sourceUrl) }
 }
 
-export function assertFiles(files: File[], accepts: 'pdf' | 'image', multiple = false): void {
+export function assertFiles(files: File[], accepts: 'pdf' | 'image' | 'word', multiple = false): void {
   if (!files.length) throw new Error('Choose a file to continue.')
   if (!multiple && files.length > 1) throw new Error('Choose one file for this tool.')
-  const allowed = accepts === 'pdf' ? legalPdf : imageType
+  const allowed = accepts === 'pdf' ? legalPdf : accepts === 'word' ? legalWord : imageType
   const invalid = files.find((file) => !allowed(file))
-  if (invalid) throw new Error(accepts === 'pdf' ? `${invalid.name} is not a supported PDF.` : `${invalid.name} is not a supported image. Use JPG, PNG, or WebP.`)
+  if (invalid) {
+    if (accepts === 'pdf') throw new Error(`${invalid.name} is not a supported PDF.`)
+    if (accepts === 'word') throw new Error(`${invalid.name} is not a supported Word document. Use .docx or .doc.`)
+    throw new Error(`${invalid.name} is not a supported image. Use JPG, PNG, or WebP.`)
+  }
   const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
   if (tooLarge) throw new Error(`${tooLarge.name} exceeds the 100 MB browser processing limit.`)
 }
@@ -154,6 +164,14 @@ export const browserDocumentProcessor = {
     pdf.setSubject(fields.subject)
     pdf.setKeywords(fields.keywords.split(',').map((item) => item.trim()).filter(Boolean))
     return output(pdf, outputName(file.name, 'metadata'), file.size)
+  },
+  pdfToDocx: async (file: File) => {
+    assertFiles([file], 'pdf')
+    return pdfToDocx(file)
+  },
+  wordToPdf: async (file: File) => {
+    assertFiles([file], 'word')
+    return docxToPdf(file)
   },
 }
 

@@ -34,6 +34,7 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
   const [metadata, setMetadata] = useState({ title: '', author: '', subject: '', keywords: '' })
   const multiple = tool.id === 'merge-pdf' || tool.id === 'image-to-pdf'
   const imageTool = tool.id === 'image-to-pdf'
+  const wordTool = tool.id === 'word-to-pdf'
   const first = files[0]
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
   }, [tool.id])
 
   useEffect(() => {
-    if (!first || imageTool) return
+    if (!first || imageTool || wordTool) return
     void browserDocumentProcessor
       .inspect(first)
       .then((data) => {
@@ -54,7 +55,7 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         setMetadata((previous) => ({ ...previous, title: data.title, author: data.author }))
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not read this PDF.'))
-  }, [first, imageTool])
+  }, [first, imageTool, wordTool])
 
   const rangeIsNeeded = ['split-pdf', 'extract-pdf', 'delete-pages', 'rotate-pdf'].includes(tool.id)
 
@@ -133,6 +134,24 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         </div>
       )
     }
+    if (tool.id === 'pdf-to-word') {
+      return (
+        <div className="tool-info-card">
+          <p style={{ margin: 0, fontSize: '13px', color: '#d4d4d4', lineHeight: 1.6 }}>
+            Extracts PDF text, paragraphs, and headings directly into an editable Microsoft Word (.docx) file on your machine.
+          </p>
+        </div>
+      )
+    }
+    if (tool.id === 'word-to-pdf') {
+      return (
+        <div className="tool-info-card">
+          <p style={{ margin: 0, fontSize: '13px', color: '#d4d4d4', lineHeight: 1.6 }}>
+            Transforms Microsoft Word (.docx) documents into clean, standardized vector PDF pages with headers and page numbers.
+          </p>
+        </div>
+      )
+    }
     return null
   }, [tool.id, angle, watermark, position, imageFit, imageFormat, metadata])
 
@@ -195,6 +214,12 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
           break
         case 'pdf-to-text':
           processed = await pdfToText(first!)
+          break
+        case 'pdf-to-word':
+          processed = await browserDocumentProcessor.pdfToDocx(first!)
+          break
+        case 'word-to-pdf':
+          processed = await browserDocumentProcessor.wordToPdf(first!)
           break
         default:
           throw new Error('This tool is not connected yet.')
@@ -261,11 +286,23 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
           <div className="tool-grid">
             <div>
               <FileUploader
-                accept={imageTool ? 'image/jpeg,image/png,image/webp' : 'application/pdf,.pdf'}
+                accept={
+                  imageTool
+                    ? 'image/jpeg,image/png,image/webp'
+                    : wordTool
+                    ? '.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword'
+                    : 'application/pdf,.pdf'
+                }
                 multiple={multiple}
                 files={files}
                 onFiles={setFiles}
-                label={multiple ? 'Drop files here or browse multiple' : 'Drop your document here or browse'}
+                label={
+                  multiple
+                    ? 'Drop files here or browse multiple'
+                    : wordTool
+                    ? 'Drop your Word document (.docx) here or browse'
+                    : 'Drop your document here or browse'
+                }
               />
               {pageCount && (
                 <div className="file-insight">
@@ -367,6 +404,7 @@ function ResultCard({
   onDownload: (result: ProcessedDocument) => void
 }) {
   const reduction = result.inputBytes ? Math.round((1 - result.outputBytes / result.inputBytes) * 100) : 0
+  const isPdf = result.mimeType === 'application/pdf'
 
   return (
     <section className="result-card">
@@ -375,7 +413,7 @@ function ResultCard({
         <h2>Your document is ready.</h2>
         <p>
           {result.fileName} · {formatBytes(result.outputBytes)}
-          {result.mimeType === 'application/pdf' && result.pageCount ? ` · ${result.pageCount} pages` : ''}
+          {isPdf && result.pageCount ? ` · ${result.pageCount} pages` : ''}
         </p>
         {result.fileName.includes('optimized') && (
           <p className="result-stat">
@@ -386,16 +424,18 @@ function ResultCard({
       <div className="result-actions">
         <button type="button" className="button button-primary" onClick={() => onDownload(result)}>
           <DownloadIcon size={16} />
-          <span>Download Document</span>
+          <span>{result.fileName.endsWith('.docx') ? 'Download Word Document (.docx)' : 'Download Document'}</span>
         </button>
-        <button
-          type="button"
-          className="button button-ghost"
-          onClick={() => window.open(URL.createObjectURL(result.blob), '_blank', 'noopener,noreferrer')}
-        >
-          <EyeIcon size={16} />
-          <span>Live Preview</span>
-        </button>
+        {isPdf && (
+          <button
+            type="button"
+            className="button button-ghost"
+            onClick={() => window.open(URL.createObjectURL(result.blob), '_blank', 'noopener,noreferrer')}
+          >
+            <EyeIcon size={16} />
+            <span>Live Preview</span>
+          </button>
+        )}
       </div>
     </section>
   )

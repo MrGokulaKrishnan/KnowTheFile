@@ -10,8 +10,10 @@
     "lint": "tsc -b --pretty false"
   },
   "dependencies": {
+    "docx": "^9.7.1",
     "firebase": "^12.18.0",
     "jszip": "^3.10.1",
+    "mammoth": "^1.12.2",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.3.31",
     "react": "^19.1.0",

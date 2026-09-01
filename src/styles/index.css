@@ -377,28 +377,28 @@ h1 { letter-spacing: -0.04em; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 210, 26, 0.1));
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #000000;
   border: 1px solid rgba(255, 210, 26, 0.4);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.4);
-  transition: transform 0.3s ease, border-color 0.3s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 210, 26, 0.2);
+  transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  overflow: hidden;
 }
 
 .brand:hover .brand-mark-wrap {
-  transform: scale(1.06) rotate(2deg);
-  border-color: rgba(255, 210, 26, 0.9);
-  box-shadow: 0 8px 25px rgba(255, 170, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+  transform: scale(1.06);
+  border-color: rgba(255, 210, 26, 0.95);
+  box-shadow: 0 6px 20px rgba(255, 170, 0, 0.4), 0 0 15px rgba(255, 210, 26, 0.35);
 }
 
 .brand-mark {
   display: block;
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  filter: drop-shadow(0 4px 10px rgba(255, 170, 0, 0.35));
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 9px;
 }
 
 .brand-wordmark {

@@ -14,7 +14,9 @@ import {
   ShieldCheckIcon,
   ArrowRightIcon,
   RefreshCwIcon,
-  ShieldAlertIcon
+  ShieldAlertIcon,
+  TrashIcon,
+  EditorIcon
 } from '../common/Icons'
 
 export function ToolRunner({ tool }: { tool: ToolDefinition }) {
@@ -24,14 +26,24 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
   const [error, setError] = useState('')
   const [result, setResult] = useState<ProcessedDocument | null>(null)
   const [manyResults, setManyResults] = useState<ProcessedDocument[]>([])
+  const [progress, setProgress] = useState(0)
+  const [progressStage, setProgressStage] = useState('')
+
+  // Tool specific configurations
   const [range, setRange] = useState('')
+  const [splitMode, setSplitMode] = useState<'all' | 'custom'>('all')
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [angle, setAngle] = useState(90)
+  const [compressLevel, setCompressLevel] = useState<'low' | 'medium' | 'high'>('medium')
   const [watermark, setWatermark] = useState('CONFIDENTIAL')
   const [position, setPosition] = useState<'bottom-center' | 'bottom-right'>('bottom-center')
   const [imageFit, setImageFit] = useState<'fit' | 'original'>('fit')
   const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png')
+  const [imageDpi, setImageDpi] = useState<'300' | '150' | '72'>('300')
   const [metadata, setMetadata] = useState({ title: '', author: '', subject: '', keywords: '' })
+  const [signature, setSignature] = useState('Authorized Signature')
+  const [password, setPassword] = useState('')
+
   const multiple = tool.id === 'merge-pdf' || tool.id === 'image-to-pdf'
   const imageTool = tool.id === 'image-to-pdf'
   const wordTool = tool.id === 'word-to-pdf'
@@ -44,6 +56,12 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     setError('')
     setPageCount(null)
     setRange('')
+    setPassword('')
+    setProgress(0)
+    setProgressStage('')
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
   }, [tool.id])
 
   useEffect(() => {
@@ -54,22 +72,153 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         setPageCount(data.pageCount)
         setMetadata((previous) => ({ ...previous, title: data.title, author: data.author }))
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not read this PDF.'))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not inspect this PDF document.'))
   }, [first, imageTool, wordTool])
 
   const rangeIsNeeded = ['split-pdf', 'extract-pdf', 'delete-pages', 'rotate-pdf'].includes(tool.id)
 
+  const moveFile = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= files.length) return
+    const updated = [...files]
+    const temp = updated[index]
+    updated[index] = updated[targetIndex]
+    updated[targetIndex] = temp
+    setFiles(updated)
+  }
+
+  const togglePageInCustomRange = (pageNumber: number) => {
+    const current = range.split(',').map((s) => s.trim()).filter(Boolean)
+    const pageStr = String(pageNumber)
+    let next: string[]
+    if (current.includes(pageStr)) {
+      next = current.filter((p) => p !== pageStr)
+    } else {
+      next = [...current, pageStr].sort((a, b) => Number(a) - Number(b))
+    }
+    setRange(next.join(', '))
+  }
+
   const settings = useMemo(() => {
+    if (tool.id === 'pdf-editor') {
+      return (
+        <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(255,210,26,0.08)', border: '1px solid rgba(255,210,26,0.25)' }}>
+          <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '6px' }}>Interactive Canvas Studio</strong>
+          <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#d4d4d4', lineHeight: 1.5 }}>
+            Add text, whiteout/erase existing text, annotate, and re-position items directly on high-resolution PDF pages.
+          </p>
+          <Link to="/editor" className="button button-primary" style={{ width: '100%', justifyContent: 'center' }}>
+            <EditorIcon size={16} />
+            <span>Launch PDF Studio Canvas</span>
+          </Link>
+        </div>
+      )
+    }
+    if (tool.id === 'compress-pdf') {
+      return (
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <label>
+            Compression Mode
+            <select value={compressLevel} onChange={(e) => setCompressLevel(e.target.value as typeof compressLevel)}>
+              <option value="high">High Compression (Maximum Size Reduction)</option>
+              <option value="medium">Balanced (Recommended for general use)</option>
+              <option value="low">Low Compression (Preserve maximum fidelity)</option>
+            </select>
+          </label>
+          <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '12px', color: '#a3a3a3' }}>
+            {compressLevel === 'high' && '• Strips duplicate objects, removes metadata streams, and enables cross-reference object compression.'}
+            {compressLevel === 'medium' && '• Compresses content streams and reorganizes document trees without degrading vector text.'}
+            {compressLevel === 'low' && '• Optimizes object streams while preserving all metadata and structural tags.'}
+          </div>
+        </div>
+      )
+    }
+    if (tool.id === 'split-pdf') {
+      return (
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <label>
+            Split Method
+            <select
+              value={splitMode}
+              onChange={(e) => {
+                const mode = e.target.value as typeof splitMode
+                setSplitMode(mode)
+                if (mode === 'all') setRange('')
+              }}
+            >
+              <option value="all">Split All Pages into Separate PDFs (ZIP)</option>
+              <option value="custom">Extract Specific Page Range</option>
+            </select>
+          </label>
+
+          {splitMode === 'custom' && (
+            <div>
+              <label>
+                Page Range or Numbers
+                <input
+                  value={range}
+                  onChange={(e) => setRange(e.target.value)}
+                  placeholder="e.g. 1-3, 5"
+                />
+              </label>
+              {pageCount && pageCount > 1 && pageCount <= 24 && (
+                <div style={{ marginTop: '10px' }}>
+                  <small style={{ color: '#a3a3a3', display: 'block', marginBottom: '6px' }}>Click to select pages:</small>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {Array.from({ length: pageCount }, (_, i) => i + 1).map((num) => {
+                      const isSelected = range.split(',').map((s) => s.trim()).includes(String(num))
+                      return (
+                        <button
+                          type="button"
+                          key={num}
+                          onClick={() => togglePageInCustomRange(num)}
+                          style={{
+                            minWidth: '32px',
+                            height: '32px',
+                            borderRadius: '6px',
+                            background: isSelected ? '#ffd21a' : 'rgba(255,255,255,0.06)',
+                            color: isSelected ? '#000000' : '#ffffff',
+                            border: isSelected ? '1px solid #ffd21a' : '1px solid rgba(255,255,255,0.12)',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {num}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    }
     if (tool.id === 'rotate-pdf') {
       return (
-        <label>
-          Rotation Angle
-          <select value={angle} onChange={(event) => setAngle(Number(event.target.value))}>
-            <option value={90}>90° Clockwise</option>
-            <option value={180}>180° Flip</option>
-            <option value={270}>270° Clockwise (90° CCW)</option>
-          </select>
-        </label>
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <label>
+            Rotation Angle
+            <select value={angle} onChange={(event) => setAngle(Number(event.target.value))}>
+              <option value={90}>90° Clockwise</option>
+              <option value={180}>180° Half-Turn (Flip Upside Down)</option>
+              <option value={270}>270° Clockwise (90° Counter-Clockwise)</option>
+            </select>
+          </label>
+          <label>
+            Target Pages (Optional)
+            <input
+              value={range}
+              onChange={(event) => setRange(event.target.value)}
+              placeholder="Leave blank for entire document or enter e.g. 1, 3"
+            />
+            <small style={{ color: '#737373', marginTop: '4px', display: 'block' }}>
+              Leave blank to rotate all pages in the PDF.
+            </small>
+          </label>
+        </div>
       )
     }
     if (tool.id === 'watermark-pdf') {
@@ -81,6 +230,32 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
             maxLength={60}
             onChange={(event) => setWatermark(event.target.value)}
             placeholder="e.g. CONFIDENTIAL, DRAFT"
+          />
+        </label>
+      )
+    }
+    if (tool.id === 'sign-pdf') {
+      return (
+        <label>
+          Signature Stamp / Name
+          <input
+            value={signature}
+            maxLength={60}
+            onChange={(event) => setSignature(event.target.value)}
+            placeholder="e.g. John Doe, Authorized Officer"
+          />
+        </label>
+      )
+    }
+    if (tool.id === 'unlock-pdf') {
+      return (
+        <label>
+          PDF Password (if encrypted)
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Enter document password"
           />
         </label>
       )
@@ -109,13 +284,23 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     }
     if (tool.id === 'pdf-to-image') {
       return (
-        <label>
-          Export Format
-          <select value={imageFormat} onChange={(event) => setImageFormat(event.target.value as typeof imageFormat)}>
-            <option value="png">PNG (Lossless & Crisp)</option>
-            <option value="jpg">JPG (Smaller Size)</option>
-          </select>
-        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <label>
+            Export Format
+            <select value={imageFormat} onChange={(event) => setImageFormat(event.target.value as typeof imageFormat)}>
+              <option value="png">PNG (Lossless)</option>
+              <option value="jpg">JPG (Compact)</option>
+            </select>
+          </label>
+          <label>
+            Resolution / Quality
+            <select value={imageDpi} onChange={(event) => setImageDpi(event.target.value as typeof imageDpi)}>
+              <option value="300">300 DPI (High Quality Print)</option>
+              <option value="150">150 DPI (HD Screen)</option>
+              <option value="72">72 DPI (Web Speed)</option>
+            </select>
+          </label>
+        </div>
       )
     }
     if (tool.id === 'metadata-pdf') {
@@ -134,26 +319,8 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         </div>
       )
     }
-    if (tool.id === 'pdf-to-word') {
-      return (
-        <div className="tool-info-card">
-          <p style={{ margin: 0, fontSize: '13px', color: '#d4d4d4', lineHeight: 1.6 }}>
-            Extracts PDF text, paragraphs, and headings directly into an editable Microsoft Word (.docx) file on your machine.
-          </p>
-        </div>
-      )
-    }
-    if (tool.id === 'word-to-pdf') {
-      return (
-        <div className="tool-info-card">
-          <p style={{ margin: 0, fontSize: '13px', color: '#d4d4d4', lineHeight: 1.6 }}>
-            Transforms Microsoft Word (.docx) documents into clean, standardized vector PDF pages with headers and page numbers.
-          </p>
-        </div>
-      )
-    }
     return null
-  }, [tool.id, angle, watermark, position, imageFit, imageFormat, metadata])
+  }, [tool.id, compressLevel, splitMode, range, pageCount, angle, watermark, signature, password, position, imageFit, imageFormat, imageDpi, metadata])
 
   const run = async () => {
     setError('')
@@ -169,12 +336,24 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
       return
     }
 
+    if (tool.id === 'merge-pdf' && files.length < 2) {
+      setError('Please upload at least 2 PDF files to merge into a single document.')
+      toast.show('Please select at least 2 PDF files to merge.', 'error')
+      return
+    }
+
     setStatus('processing')
+    setProgress(15)
+    setProgressStage('Initializing browser document engine…')
+
     try {
       let processed: ProcessedDocument | undefined
       let splitResults: ProcessedDocument[] = []
       const pages = rangeIsNeeded && range.trim() ? parsePageRange(range, pageCount ?? 0) : { pages: [] }
       if (pages.error) throw new Error(pages.error)
+
+      setProgress(40)
+      setProgressStage('Processing document stream on-device…')
 
       switch (tool.id) {
         case 'merge-pdf':
@@ -195,7 +374,7 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
           processed = await browserDocumentProcessor.rotate(first!, pages.pages, angle)
           break
         case 'compress-pdf':
-          processed = await browserDocumentProcessor.compress(first!)
+          processed = await browserDocumentProcessor.compress(first!, compressLevel)
           break
         case 'image-to-pdf':
           processed = await browserDocumentProcessor.imagesToPdf(files, imageFit)
@@ -210,7 +389,9 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
           processed = await browserDocumentProcessor.metadata(first!, metadata)
           break
         case 'pdf-to-image':
-          processed = await pdfToImages(first!, imageFormat)
+          processed = await pdfToImages(first!, imageFormat, imageDpi, (pct) => {
+            setProgress(40 + Math.round(pct * 0.5))
+          })
           break
         case 'pdf-to-text':
           processed = await pdfToText(first!)
@@ -221,9 +402,18 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         case 'word-to-pdf':
           processed = await browserDocumentProcessor.wordToPdf(first!)
           break
+        case 'sign-pdf':
+          processed = await browserDocumentProcessor.sign(first!, signature)
+          break
+        case 'unlock-pdf':
+          processed = await browserDocumentProcessor.unlock(first!, password)
+          break
         default:
           throw new Error('This tool is not connected yet.')
       }
+
+      setProgress(90)
+      setProgressStage('Finalizing output archive…')
 
       if (processed && processed.blob.size === 0) {
         throw new Error('The output file was empty, so it was discarded.')
@@ -231,8 +421,9 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
 
       setResult(processed ?? null)
       setManyResults(splitResults)
+      setProgress(100)
       setStatus('completed')
-      toast.show('Your document is ready.', 'success')
+      toast.show('Your document has been processed successfully.', 'success')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Processing failed. Try another file.')
       setStatus('error')
@@ -244,8 +435,10 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     const anchor = document.createElement('a')
     anchor.href = url
     anchor.download = item.fileName
+    document.body.appendChild(anchor)
     anchor.click()
-    URL.revokeObjectURL(url)
+    document.body.removeChild(anchor)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const downloadAll = async () => {
@@ -259,6 +452,13 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
       inputBytes: first?.size ?? 0,
       outputBytes: blob.size
     })
+  }
+
+  const canProcess = () => {
+    if (status === 'processing') return false
+    if (!files.length) return false
+    if (tool.id === 'merge-pdf' && files.length < 2) return false
+    return true
   }
 
   return (
@@ -297,13 +497,84 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
                 files={files}
                 onFiles={setFiles}
                 label={
-                  multiple
+                  tool.id === 'merge-pdf'
+                    ? 'Drop 2 or more PDF files here to merge'
+                    : multiple
                     ? 'Drop files here or browse multiple'
                     : wordTool
                     ? 'Drop your Word document (.docx) here or browse'
                     : 'Drop your document here or browse'
                 }
               />
+
+              {/* Multi-File Merge Order & Manager */}
+              {tool.id === 'merge-pdf' && files.length > 0 && (
+                <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <strong style={{ fontSize: '13px', color: '#ffffff' }}>Merge Sequence ({files.length} files)</strong>
+                    <span style={{ fontSize: '11px', color: '#ffd21a' }}>Files will merge top to bottom</span>
+                  </div>
+                  <div style={{ display: 'grid', gap: '8px' }}>
+                    {files.map((file, idx) => (
+                      <div
+                        key={`${file.name}-${idx}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          background: 'rgba(20,20,20,0.8)',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(255,255,255,0.06)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                          <span style={{ width: '22px', height: '22px', borderRadius: '4px', background: '#ffd21a', color: '#000000', fontWeight: 800, fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {idx + 1}
+                          </span>
+                          <span style={{ fontSize: '12px', color: '#f5f5f7', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                            {file.name}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => moveFile(idx, 'up')}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
+                            title="Move Up"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === files.length - 1}
+                            onClick={() => moveFile(idx, 'down')}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}
+                            title="Move Down"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFiles(files.filter((_, i) => i !== idx))}
+                            style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', padding: '4px' }}
+                            title="Remove file"
+                          >
+                            <TrashIcon size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {files.length === 1 && (
+                    <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#ffd21a' }}>
+                      ⚠️ Please add at least 1 more PDF file to perform a merge.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {pageCount && (
                 <div className="file-insight">
                   <ShieldCheckIcon size={16} />
@@ -314,26 +585,33 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
 
             <aside className="settings-card">
               <h2>Tool Configuration</h2>
-              {rangeIsNeeded && (
-                <label>
-                  Target Pages
-                  <input
-                    value={range}
-                    onChange={(event) => setRange(event.target.value)}
-                    placeholder={tool.id === 'split-pdf' ? 'Leave blank for all pages' : 'e.g. 1-3, 5'}
-                  />
-                  <small>
-                    {tool.id === 'delete-pages'
-                      ? 'Specified pages will be removed permanently from the result.'
-                      : 'Separate page numbers and ranges with commas.'}
-                  </small>
-                </label>
-              )}
               {settings}
+
+              {/* Dynamic Live Progress Bar */}
+              {status === 'processing' && (
+                <div style={{ marginTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#ffd21a', fontWeight: 700, marginBottom: '6px' }}>
+                    <span>{progressStage || 'Processing…'}</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '9999px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${progress}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #ffd21a, #ff9f0a)',
+                        borderRadius: '9999px',
+                        transition: 'width 0.3s ease'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 className="button button-primary process-button"
-                disabled={status === 'processing' || !files.length}
+                disabled={!canProcess()}
                 onClick={() => void run()}
               >
                 {status === 'processing' ? (
@@ -344,7 +622,13 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
                 ) : (
                   <>
                     <SparklesIcon size={18} />
-                    <span>Process {tool.name}</span>
+                    <span>
+                      {tool.id === 'merge-pdf'
+                        ? files.length >= 2
+                          ? `Merge ${files.length} PDFs`
+                          : 'Select 2+ PDFs to Merge'
+                        : `Process ${tool.name}`}
+                    </span>
                   </>
                 )}
               </button>
@@ -415,7 +699,7 @@ function ResultCard({
           {result.fileName} · {formatBytes(result.outputBytes)}
           {isPdf && result.pageCount ? ` · ${result.pageCount} pages` : ''}
         </p>
-        {result.fileName.includes('optimized') && (
+        {result.fileName.includes('compressed') && (
           <p className="result-stat">
             Compression Result: {reduction >= 0 ? `${reduction}% smaller` : `${Math.abs(reduction)}% larger`}
           </p>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type PropsWithChildren } from 'react'
+import { useEffect, useState, Component, type ReactNode, type FormEvent, type PropsWithChildren } from 'react'
 import { Navigate, Route, Routes, Link, useLocation, useSearchParams } from 'react-router-dom'
 import { PublicShell, WorkspaceShell } from './components/layout/AppShell'
 import { Brand } from './components/common/Brand'
@@ -88,9 +88,104 @@ function PageMeta({ title, description, canonicalPath = '/', keywords, schemaJso
   return null
 }
 
+interface ErrorBoundaryProps {
+  children: ReactNode
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean
+  error: Error | null
+}
+
+export class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Unhandled KnowTheFile Studio runtime error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ minHeight: '100vh', background: '#000000', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ maxWidth: '480px', width: '100%', background: 'rgba(20,20,20,0.95)', border: '1px solid rgba(255,210,26,0.3)', borderRadius: '16px', padding: '32px', textAlign: 'center', color: '#ffffff' }}>
+            <h2 style={{ fontSize: '24px', margin: '0 0 12px', color: '#ffd21a' }}>Document Studio Encountered an Issue</h2>
+            <p style={{ color: '#a3a3a3', fontSize: '14px', lineHeight: 1.6, marginBottom: '24px' }}>
+              Your file data remained 100% private in local browser memory. Click below to reload the studio cleanly.
+            </p>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => {
+                this.setState({ hasError: false, error: null })
+                window.location.href = '/'
+              }}
+              style={{ width: '100%', minHeight: '44px' }}
+            >
+              Reload KnowTheFile Studio
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function ScrollToTop() {
+  const { pathname, search, hash } = useLocation()
+
+  useEffect(() => {
+    // Prevent browser from automatically restoring previous scroll offset on SPA route changes
+    if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual'
+    }
+
+    if (hash) {
+      const id = hash.replace('#', '')
+      const targetElement = document.getElementById(id)
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth' })
+        return
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      const html = document.documentElement
+      const originalBehavior = html.style.scrollBehavior
+      html.style.scrollBehavior = 'auto'
+      window.scrollTo(0, 0)
+      html.scrollTop = 0
+      document.body.scrollTop = 0
+
+      const mainEl = document.querySelector('main')
+      if (mainEl) mainEl.scrollTop = 0
+      const shellEl = document.querySelector('.site-shell')
+      if (shellEl) shellEl.scrollTop = 0
+      const workspaceEl = document.querySelector('.workspace-main')
+      if (workspaceEl) workspaceEl.scrollTop = 0
+
+      requestAnimationFrame(() => {
+        html.style.scrollBehavior = originalBehavior
+      })
+    }
+  }, [pathname, search, hash])
+
+  return null
+}
+
 export default function App() {
   return (
-    <Routes>
+    <GlobalErrorBoundary>
+      <ScrollToTop />
+      <Routes>
       <Route
         path="/"
         element={
@@ -349,6 +444,7 @@ export default function App() {
         }
       />
     </Routes>
+  </GlobalErrorBoundary>
   )
 }
 
@@ -356,7 +452,7 @@ function HomePage() {
   return (
     <>
       <PageMeta
-        title="KnowTheFile — 100% Private, On-Device PDF & Document Suite"
+        title="KnowTheFile - 100% Private, On-Device PDF & Document Suite"
         description="Merge, split, compress, edit, convert, and secure PDF documents directly inside your browser. 100% private, client-side WebAssembly execution with zero server uploads."
         canonicalPath="/"
         keywords="PDF tools, merge PDF, split PDF, compress PDF, PDF editor online, convert PDF, edit PDF, free PDF tools, private PDF tools, on-device document processing, knowthefile"
@@ -411,16 +507,16 @@ function HomePage() {
               <FileTextIcon size={18} />
             </div>
             <div className="node-meta">
-              <small style={{ color: '#ffd21a', fontWeight: 800, fontSize: '9px', letterSpacing: '0.08em' }}>INPUT FILE</small>
-              <strong>annual_report.pdf</strong>
+              <small style={{ color: '#ffd21a', fontWeight: 800, fontSize: '10px', letterSpacing: '0.04em' }}>Input File</small>
+              <strong>Annual_Report.pdf</strong>
               <span>2.4 MB · 16 Pages</span>
             </div>
           </div>
 
           {/* Center Hub */}
           <div className="visual-center-hub">
-            <span>KF</span>
-            <small>ON-DEVICE</small>
+            <img src="/kf-logo.png" alt="KnowTheFile Logo" style={{ width: '52px', height: '52px', objectFit: 'contain', borderRadius: '10px', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))' }} />
+            <small style={{ color: '#000000', fontWeight: 800, fontSize: '9px', letterSpacing: '0.04em', marginTop: '2px' }}>On-Device</small>
           </div>
 
           {/* Node: Output */}
@@ -429,9 +525,9 @@ function HomePage() {
               <ShieldCheckIcon size={18} />
             </div>
             <div className="node-meta">
-              <small className="ready-badge">VERIFIED OUTPUT</small>
-              <strong>report-merged.pdf</strong>
-              <span>Ready for download</span>
+              <small className="ready-badge" style={{ textTransform: 'none', letterSpacing: '0.04em' }}>Verified Output</small>
+              <strong>Report-Merged.pdf</strong>
+              <span>Ready for Download</span>
             </div>
           </div>
 
@@ -622,7 +718,7 @@ function ToolsPage() {
         canonicalPath="/tools"
         keywords="pdf tools directory, all pdf tools, merge pdf, split pdf, compress pdf, convert docx to pdf, image to pdf, pdf editor"
       />
-      <p className="eyebrow">DOCUMENT TOOLKIT</p>
+      <p className="eyebrow">Document Toolkit</p>
       <h1>
         Find the exact tool<br />
         <span>for your document workflow.</span>
@@ -781,7 +877,7 @@ function PricingPage() {
         canonicalPath="/pricing"
         keywords="free pdf tools, pdf editor pricing, document processing cost, knowthefile plans"
       />
-      <p className="eyebrow">TRANSPARENT ARCHITECTURE</p>
+      <p className="eyebrow">Transparent Architecture</p>
       <h1>Simple plans. Clear limits.</h1>
       <p className="page-lede">
         All browser-ready document tools are 100% free and client-side today. Cloud storage sync and backend conversion will be optional add-ons.

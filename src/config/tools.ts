@@ -16,9 +16,9 @@ export const tools: ToolDefinition[] = [
   { id: 'pdf-to-text', name: 'PDF to Text', description: 'Extract all readable document text directly into clean, searchable copy.', category: 'Convert', availability: 'browser', accent: 'pdf-to-text', tag: 'Direct OCR' },
   { id: 'pdf-to-word', name: 'PDF to Word', description: 'Convert PDF documents into editable Microsoft Word DOCX formatting.', category: 'Convert', availability: 'browser', accent: 'pdf-to-word', tag: 'DOCX' },
   { id: 'word-to-pdf', name: 'Word to PDF', description: 'Transform DOCX files into standard, faithfully rendered PDF documents.', category: 'Convert', availability: 'browser', accent: 'word-to-pdf', tag: 'Converter' },
-  { id: 'sign-pdf', name: 'Sign PDF', description: 'Draw and place visual signature stamps across document signature fields.', category: 'Secure', availability: 'server', accent: 'sign-pdf', tag: 'Signature' },
+  { id: 'sign-pdf', name: 'Sign PDF', description: 'Draw and place visual signature stamps across document signature fields.', category: 'Secure', availability: 'browser', accent: 'sign-pdf', tag: 'Signature' },
   { id: 'protect-pdf', name: 'Protect PDF', description: 'Encrypt sensitive documents with standard AES password security.', category: 'Secure', availability: 'server', accent: 'protect-pdf', tag: 'AES-256' },
-  { id: 'unlock-pdf', name: 'Unlock PDF', description: 'Remove password protection from authorized documents with your passphrase.', category: 'Secure', availability: 'server', accent: 'unlock-pdf', tag: 'Decryption' },
+  { id: 'unlock-pdf', name: 'Unlock PDF', description: 'Remove password protection from authorized documents with your passphrase.', category: 'Secure', availability: 'browser', accent: 'unlock-pdf', tag: 'Decryption' },
 ]
 
 export const findTool = (id: string) => tools.find((tool) => tool.id === id)

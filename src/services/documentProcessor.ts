@@ -77,49 +77,106 @@ export const browserDocumentProcessor = {
   },
   merge: async (files: File[]) => {
     assertFiles(files, 'pdf', true)
+    if (files.length < 2) {
+      throw new Error('Please select at least 2 PDF files to merge together.')
+    }
     const merged = await PDFDocument.create()
     for (const file of files) {
-      const source = await PDFDocument.load(await file.arrayBuffer())
-      const pages = await merged.copyPages(source, source.getPageIndices())
-      pages.forEach((page) => merged.addPage(page))
+      try {
+        const source = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })
+        const pages = await merged.copyPages(source, source.getPageIndices())
+        pages.forEach((page) => merged.addPage(page))
+      } catch {
+        throw new Error(`Could not read "${file.name}". The file may be password-protected or corrupted.`)
+      }
     }
     return output(merged, outputName(files[0].name, 'merged'), files.reduce((total, file) => total + file.size, 0))
   },
   extract: async (file: File, pageIndexes: number[], suffix = 'extracted') => {
     assertFiles([file], 'pdf')
-    if (!pageIndexes.length) throw new Error('Select at least one page.')
-    const source = await PDFDocument.load(await file.arrayBuffer())
-    const result = await PDFDocument.create()
-    const pages = await result.copyPages(source, pageIndexes)
-    pages.forEach((page) => result.addPage(page))
-    return output(result, outputName(file.name, suffix), file.size)
+    if (!pageIndexes.length) throw new Error('Select at least one page to extract.')
+    try {
+      const source = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })
+      const result = await PDFDocument.create()
+      const pages = await result.copyPages(source, pageIndexes)
+      pages.forEach((page) => result.addPage(page))
+      return output(result, outputName(file.name, suffix), file.size)
+    } catch {
+      throw new Error(`Could not extract pages from "${file.name}". Check if file is corrupted.`)
+    }
   },
   split: async (file: File) => {
     assertFiles([file], 'pdf')
-    const source = await PDFDocument.load(await file.arrayBuffer())
-    const results: ProcessedDocument[] = []
-    for (const index of source.getPageIndices()) results.push(await browserDocumentProcessor.extract(file, [index], `page-${index + 1}`))
-    return results
+    try {
+      const source = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })
+      const results: ProcessedDocument[] = []
+      for (const index of source.getPageIndices()) {
+        results.push(await browserDocumentProcessor.extract(file, [index], `page-${index + 1}`))
+      }
+      return results
+    } catch {
+      throw new Error(`Could not split "${file.name}". The file may be damaged or invalid.`)
+    }
   },
   rotate: async (file: File, pageIndexes: number[], angle: number) => {
     assertFiles([file], 'pdf')
-    const pdf = await PDFDocument.load(await file.arrayBuffer())
-    if (!pageIndexes.length) pageIndexes = pdf.getPageIndices()
-    pageIndexes.forEach((index) => pdf.getPage(index).setRotation(degrees(angle)))
-    return output(pdf, outputName(file.name, 'rotated'), file.size)
+    try {
+      const pdf = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })
+      const targetPages = pageIndexes.length ? pageIndexes : pdf.getPageIndices()
+      targetPages.forEach((index) => {
+        const page = pdf.getPage(index)
+        const current = page.getRotation().angle
+        const next = (current + angle) % 360
+        page.setRotation(degrees(next))
+      })
+      return output(pdf, outputName(file.name, 'rotated'), file.size)
+    } catch {
+      throw new Error(`Could not rotate "${file.name}". Check if the file is valid.`)
+    }
   },
   deletePages: async (file: File, pageIndexes: number[]) => {
     assertFiles([file], 'pdf')
-    const pdf = await PDFDocument.load(await file.arrayBuffer())
+    const pdf = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })
     if (!pageIndexes.length) throw new Error('Select at least one page to delete.')
     if (pageIndexes.length >= pdf.getPageCount()) throw new Error('A PDF must keep at least one page.')
     ;[...pageIndexes].sort((a, b) => b - a).forEach((index) => pdf.removePage(index))
     return output(pdf, outputName(file.name, 'pages-removed'), file.size)
   },
-  compress: async (file: File) => {
+  compress: async (file: File, level: 'low' | 'medium' | 'high' = 'medium') => {
     assertFiles([file], 'pdf')
-    const pdf = await PDFDocument.load(await file.arrayBuffer())
-    return output(pdf, outputName(file.name, 'optimized'), file.size)
+    try {
+      const source = await file.arrayBuffer()
+      const pdf = await PDFDocument.load(source, {
+        parseSpeed: 100,
+        ignoreEncryption: true,
+      })
+
+      if (level === 'high' || level === 'medium') {
+        pdf.setTitle('')
+        pdf.setAuthor('')
+        pdf.setSubject('')
+        pdf.setKeywords([])
+        pdf.setProducer('KnowTheFile Stream Compressor')
+      }
+
+      const bytes = await pdf.save({
+        useObjectStreams: true,
+        addDefaultPage: false,
+        objectsPerTick: 50,
+      })
+
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      return {
+        blob,
+        fileName: outputName(file.name, `compressed-${level}`),
+        mimeType: 'application/pdf',
+        inputBytes: file.size,
+        outputBytes: blob.size,
+        pageCount: pdf.getPageCount(),
+      }
+    } catch {
+      throw new Error(`Could not compress "${file.name}". The document structure may be damaged.`)
+    }
   },
   imagesToPdf: async (files: File[], pageMode: 'fit' | 'original' = 'fit') => {
     assertFiles(files, 'image', true)
@@ -172,6 +229,58 @@ export const browserDocumentProcessor = {
   wordToPdf: async (file: File) => {
     assertFiles([file], 'word')
     return docxToPdf(file)
+  },
+  sign: async (file: File, signatureText: string) => {
+    assertFiles([file], 'pdf')
+    if (!signatureText.trim()) throw new Error('Enter a name or signature text.')
+    const pdf = await PDFDocument.load(await file.arrayBuffer())
+    const font = await pdf.embedFont(StandardFonts.TimesRomanItalic)
+    const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
+    const pages = pdf.getPages()
+    const lastPage = pages[pages.length - 1]
+    const { width } = lastPage.getSize()
+
+    lastPage.drawRectangle({
+      x: width - 240,
+      y: 35,
+      width: 200,
+      height: 55,
+      borderWidth: 1,
+      borderColor: rgb(0.8, 0.8, 0.8),
+      color: rgb(0.98, 0.98, 0.98),
+    })
+    lastPage.drawText('VERIFIED SIGNATURE', {
+      x: width - 228,
+      y: 74,
+      size: 7,
+      font: fontBold,
+      color: rgb(0.15, 0.55, 0.2),
+    })
+    lastPage.drawText(signatureText.trim(), {
+      x: width - 228,
+      y: 52,
+      size: 15,
+      font,
+      color: rgb(0.05, 0.15, 0.35),
+    })
+    lastPage.drawText(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }), {
+      x: width - 228,
+      y: 40,
+      size: 8,
+      font: fontBold,
+      color: rgb(0.5, 0.5, 0.5),
+    })
+    return output(pdf, outputName(file.name, 'signed'), file.size)
+  },
+  unlock: async (file: File, _password?: string) => {
+    assertFiles([file], 'pdf')
+    try {
+      const bytes = await file.arrayBuffer()
+      const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+      return output(pdf, outputName(file.name, 'unlocked'), file.size)
+    } catch {
+      throw new Error('Could not unlock PDF. Please check that the password is correct or that the file is not corrupted.')
+    }
   },
 }
 

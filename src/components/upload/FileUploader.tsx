@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { UploadCloudIcon, FolderUploadIcon, TrashIcon, CheckIcon } from '../common/Icons'
+import { useToast } from '../common/Toast'
 
 interface Props {
   accept: string
@@ -9,6 +10,8 @@ interface Props {
   label?: string
 }
 
+const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
+
 export function FileUploader({
   accept,
   multiple = false,
@@ -16,6 +19,7 @@ export function FileUploader({
   onFiles,
   label = 'Drop your document here or browse'
 }: Props) {
+  const toast = useToast()
   const inputId = useId()
   const folderInputId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -43,8 +47,25 @@ export function FileUploader({
 
   const handleFiles = (incomingList: FileList | File[]) => {
     const rawFiles = Array.from(incomingList)
-    const validFiles = rawFiles.filter(isFileAccepted)
+    if (rawFiles.length === 0) return
 
+    // 1. Check file types
+    const invalidFormatFiles = rawFiles.filter((f) => !isFileAccepted(f))
+    if (invalidFormatFiles.length > 0) {
+      const names = invalidFormatFiles.map((f) => f.name).slice(0, 2).join(', ')
+      const expected = accept.includes('pdf') ? 'PDF (.pdf)' : accept.includes('image') ? 'images (JPG, PNG, WebP)' : 'supported'
+      toast.show(`${names} is not a supported file type. Please upload ${expected} documents.`, 'error')
+    }
+
+    // 2. Check 100 MB file size limit
+    const oversizedFiles = rawFiles.filter((f) => isFileAccepted(f) && f.size > MAX_FILE_BYTES)
+    if (oversizedFiles.length > 0) {
+      const names = oversizedFiles.map((f) => `${f.name} (${formatBytes(f.size)})`).join(', ')
+      toast.show(`${names} exceeds the 100 MB in-browser memory limit. Please optimize or choose a smaller file.`, 'error')
+    }
+
+    // 3. Keep valid and within-limit files
+    const validFiles = rawFiles.filter((f) => isFileAccepted(f) && f.size <= MAX_FILE_BYTES)
     if (validFiles.length === 0) return
 
     if (multiple) {

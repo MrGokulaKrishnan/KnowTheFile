@@ -203,9 +203,10 @@ interface ParsedDocxBlock {
 export async function docxToPdf(file: File): Promise<ProcessedDocument> {
   const source = await file.arrayBuffer()
   const blocks: ParsedDocxBlock[] = []
+  const mammothInput = typeof Buffer !== 'undefined' ? { buffer: Buffer.from(source) } : { arrayBuffer: source }
 
   try {
-    const htmlResult = await mammoth.convertToHtml({ arrayBuffer: source })
+    const htmlResult = await mammoth.convertToHtml(mammothInput)
     const html = htmlResult.value
 
     if (html && html.trim()) {
@@ -232,8 +233,8 @@ export async function docxToPdf(file: File): Promise<ProcessedDocument> {
             if (itemText) blocks.push({ type: 'bullet', text: itemText })
           })
         } else {
-          const isBold = el.querySelector('strong, b') !== null
-          const isItalic = el.querySelector('em, i') !== null
+          const isBold = el.querySelector ? el.querySelector('strong, b') !== null : false
+          const isItalic = el.querySelector ? el.querySelector('em, i') !== null : false
           blocks.push({ type: 'p', text, bold: isBold, italic: isItalic })
         }
       }
@@ -244,7 +245,7 @@ export async function docxToPdf(file: File): Promise<ProcessedDocument> {
 
   if (blocks.length === 0) {
     try {
-      const rawResult = await mammoth.extractRawText({ arrayBuffer: source })
+      const rawResult = await mammoth.extractRawText(mammothInput)
       const rawText = rawResult.value
       if (rawText && rawText.trim()) {
         const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)

@@ -154,8 +154,7 @@ h1 { letter-spacing: -0.04em; }
   color: #ffd21a;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.06em;
   margin-bottom: 12px;
 }
 
@@ -2055,7 +2054,7 @@ h1 { letter-spacing: -0.04em; }
 }
 
 /* ==========================================================================
-   RESPONSIVE DESIGN
+   RESPONSIVE DESIGN & MOBILE OPTIMIZATION
    ========================================================================== */
 @media (max-width: 990px) {
   .hero { grid-template-columns: 1fr; padding-top: 50px; }
@@ -2067,14 +2066,14 @@ h1 { letter-spacing: -0.04em; }
   .tool-directory { grid-template-columns: repeat(2, 1fr); }
   .tool-grid { grid-template-columns: 1fr; }
   .workspace-shell { grid-template-columns: 190px 1fr; }
-  .editor-layout { grid-template-columns: 120px minmax(0, 1fr); }
+  .editor-layout { grid-template-columns: 100px minmax(0, 1fr); }
   .properties-panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 }
 
 @media (max-width: 720px) {
   .public-header { top: 0; padding: 0; }
   .nav-wrap { border-radius: 0; border-left: none; border-right: none; }
-  .menu-button { display: block; margin-left: auto; }
+  .menu-button { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-left: auto; }
   .public-links {
     display: none;
     position: absolute;
@@ -2088,21 +2087,50 @@ h1 { letter-spacing: -0.04em; }
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
   .public-links.is-open { display: flex; }
-  .public-links a { width: 100%; padding: 12px 16px; }
+  .public-links a { width: 100%; min-height: 44px; display: flex; align-items: center; padding: 12px 16px; }
   .nav-account .login-link { display: none; }
-  .hero-copy h1 { font-size: 40px; }
+  .hero-copy h1 { font-size: 36px; }
   .tool-directory { grid-template-columns: 1fr; }
   .steps, .pricing-grid { grid-template-columns: 1fr; }
   .site-footer { grid-template-columns: 1fr; }
   .footer-links { grid-template-columns: 1fr 1fr; }
   .auth-page { grid-template-columns: 1fr; }
-  .auth-panel { padding: 40px 24px; justify-self: stretch; }
-  .auth-aside { min-height: 260px; border-left: none; border-top: 1px solid rgba(255, 210, 26, 0.18); }
+  .auth-panel { padding: 30px 18px; justify-self: stretch; }
+  .auth-aside { min-height: 220px; border-left: none; border-top: 1px solid rgba(255, 210, 26, 0.18); }
   .workspace-shell { grid-template-columns: 1fr; }
   .workspace-sidebar { height: auto; position: relative; border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
   .workspace-label, .sidebar-link.logout { display: none; }
-  .workspace-main { padding: 24px 20px 60px; }
+  .workspace-main { padding: 20px 16px 60px; }
+  
+  /* Mobile Editor Layout */
+  .editor-toolbar { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
   .editor-toolbar strong { display: none; }
+  .editor-layout { display: flex; flex-direction: column; }
+  .thumbnail-sidebar { display: flex; overflow-x: auto; flex-direction: row; padding: 10px; max-height: 100px; border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+  .page-thumb { min-width: 60px; padding: 6px; }
+  .page-thumb span { height: 40px; font-size: 13px; }
+  .editor-canvas-wrap { padding: 16px 8px; }
+  .properties-panel { padding: 20px 14px; }
+  
+  /* Touch Targets (44px Minimum for Accessibility) */
+  .button, .icon-btn, .file-remove-btn, .upload-picker-btn {
+    min-height: 44px;
+  }
+  
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents auto-zoom on iOS mobile */
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-actions { flex-direction: column; width: 100%; }
+  .hero-actions .button { width: 100%; }
+  .trust-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .footer-links { grid-template-columns: 1fr; }
+  .result-card { flex-direction: column; align-items: flex-start; padding: 20px; }
+  .result-actions { width: 100%; justify-content: stretch; }
+  .result-actions .button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

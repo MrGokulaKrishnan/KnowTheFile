@@ -258,6 +258,41 @@ export function PDFEditorPage() {
     if (selectedId === target) setSelectedId(null)
   }
 
+  // Delete page from active document
+  const deletePage = async (pageIndexToDelete: number) => {
+    if (!file || pageCount <= 1) {
+      toast.show('A PDF document must keep at least one page.', 'error')
+      return
+    }
+
+    try {
+      const bytes = await file.arrayBuffer()
+      const pdf = await PDFDocument.load(bytes)
+      if (pageIndexToDelete < 0 || pageIndexToDelete >= pdf.getPageCount()) return
+
+      pdf.removePage(pageIndexToDelete)
+      const outBytes = await pdf.save()
+      const newFile = new File([outBytes], file.name, { type: 'application/pdf' })
+
+      // Update elements state
+      setElements((prev) =>
+        prev
+          .filter((el) => el.page !== pageIndexToDelete)
+          .map((el) => (el.page > pageIndexToDelete ? { ...el, page: el.page - 1 } : el))
+      )
+      setSelectedId(null)
+
+      // Set new active page
+      const nextActive = pageIndexToDelete >= pageCount - 1 ? Math.max(0, pageCount - 2) : pageIndexToDelete
+      setActivePage(nextActive)
+
+      setFiles([newFile])
+      toast.show(`Page ${pageIndexToDelete + 1} deleted from document.`, 'success')
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not delete this page.', 'error')
+    }
+  }
+
   // Export edited PDF via pdf-lib
   const exportPdf = async () => {
     if (!file) return
@@ -392,6 +427,18 @@ export function PDFEditorPage() {
           >
             <ZoomInIcon size={18} />
           </button>
+          {file && pageCount > 1 && (
+            <button
+              type="button"
+              className="button button-ghost"
+              style={{ minHeight: '36px', padding: '0 12px', fontSize: '11px', color: '#fb7185', borderColor: 'rgba(251,113,133,0.3)' }}
+              onClick={() => void deletePage(activePage)}
+              title={`Delete Page ${activePage + 1}`}
+            >
+              <TrashIcon size={14} />
+              <span>Delete Page {activePage + 1}</span>
+            </button>
+          )}
           <button
             type="button"
             className="button button-primary"
@@ -419,18 +466,50 @@ export function PDFEditorPage() {
           <aside className="thumbnail-sidebar">
             <p className="eyebrow">PAGES ({pageCount})</p>
             {Array.from({ length: pageCount }, (_, index) => (
-              <button
-                type="button"
-                className={`page-thumb ${activePage === index ? 'selected' : ''}`}
-                key={index}
-                onClick={() => {
-                  setActivePage(index)
-                  setSelectedId(null)
-                }}
-              >
-                <span>{index + 1}</span>
-                <small>Page {index + 1}</small>
-              </button>
+              <div key={index} style={{ position: 'relative', width: '100%', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  className={`page-thumb ${activePage === index ? 'selected' : ''}`}
+                  style={{ width: '100%' }}
+                  onClick={() => {
+                    setActivePage(index)
+                    setSelectedId(null)
+                  }}
+                >
+                  <span>{index + 1}</span>
+                  <small>Page {index + 1}</small>
+                </button>
+                {pageCount > 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void deletePage(index)
+                    }}
+                    title={`Delete Page ${index + 1}`}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      color: '#fb7185',
+                      borderRadius: '6px',
+                      width: '26px',
+                      height: '26px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      padding: 0,
+                      zIndex: 2
+                    }}
+                  >
+                    <TrashIcon size={12} />
+                  </button>
+                )}
+              </div>
             ))}
           </aside>
 

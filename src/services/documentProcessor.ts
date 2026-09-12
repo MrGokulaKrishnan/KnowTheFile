@@ -69,6 +69,28 @@ export function parsePageRange(value: string, pageCount: number): PageRangeResul
   return { pages: [...pages].sort((a, b) => a - b) }
 }
 
+export function formatPageNumbersToRange(pages: number[]): string {
+  if (!pages.length) return ''
+  const sorted = [...new Set(pages.filter((p) => p > 0))].sort((a, b) => a - b)
+  if (!sorted.length) return ''
+  const ranges: string[] = []
+  let start = sorted[0]
+  let prev = start
+
+  for (let i = 1; i < sorted.length; i++) {
+    const curr = sorted[i]
+    if (curr === prev + 1) {
+      prev = curr
+    } else {
+      ranges.push(start === prev ? `${start}` : `${start}-${prev}`)
+      start = curr
+      prev = curr
+    }
+  }
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`)
+  return ranges.join(', ')
+}
+
 export const browserDocumentProcessor = {
   inspect: async (file: File) => {
     assertFiles([file], 'pdf')

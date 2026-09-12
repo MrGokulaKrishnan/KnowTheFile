@@ -1,8 +1,9 @@
-﻿import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { PDFDocument, rgb } from 'pdf-lib'
 import {
   assertFiles,
   parsePageRange,
+  formatPageNumbersToRange,
   browserDocumentProcessor,
   MAX_FILE_BYTES,
 } from '../src/services/documentProcessor'
@@ -53,7 +54,7 @@ describe('Document Processor & Validation Suite', () => {
     })
   })
 
-  describe('parsePageRange', () => {
+  describe('parsePageRange and formatPageNumbersToRange', () => {
     it('parses comma-separated and hyphenated page ranges', () => {
       const result = parsePageRange('1-2, 4', 5)
       expect(result.error).toBeUndefined()
@@ -68,6 +69,16 @@ describe('Document Processor & Validation Suite', () => {
     it('returns error when page numbers exceed document count', () => {
       const result = parsePageRange('1-10', 3)
       expect(result.error).toContain('Pages must be between 1 and 3.')
+    })
+
+    it('formats page numbers into clean ranges', () => {
+      expect(formatPageNumbersToRange([])).toBe('')
+      expect(formatPageNumbersToRange([1])).toBe('1')
+      expect(formatPageNumbersToRange([1, 2, 3])).toBe('1-3')
+      expect(formatPageNumbersToRange([1, 2, 3, 5])).toBe('1-3, 5')
+      expect(formatPageNumbersToRange([1, 3, 5, 7])).toBe('1, 3, 5, 7')
+      expect(formatPageNumbersToRange([5, 2, 1, 3])).toBe('1-3, 5')
+      expect(formatPageNumbersToRange([1, 2, 4, 5, 6, 8])).toBe('1-2, 4-6, 8')
     })
   })
 
@@ -116,6 +127,26 @@ describe('Document Processor & Validation Suite', () => {
       const file = await createSamplePdf(4)
       const result = await browserDocumentProcessor.deletePages(file, [0, 1])
       expect(result.pageCount).toBe(2)
+    })
+
+    it('deletes non-consecutive pages from document', async () => {
+      const file = await createSamplePdf(5)
+      const result = await browserDocumentProcessor.deletePages(file, [0, 2, 4])
+      expect(result.pageCount).toBe(2)
+    })
+
+    it('throws error when no pages selected to delete', async () => {
+      const file = await createSamplePdf(3)
+      await expect(browserDocumentProcessor.deletePages(file, [])).rejects.toThrow(
+        'Select at least one page to delete.'
+      )
+    })
+
+    it('throws error when no pages selected to extract', async () => {
+      const file = await createSamplePdf(3)
+      await expect(browserDocumentProcessor.extract(file, [])).rejects.toThrow(
+        'Select at least one page to extract.'
+      )
     })
 
     it('prevents deleting all pages in a document', async () => {

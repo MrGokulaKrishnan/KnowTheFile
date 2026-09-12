@@ -16,7 +16,6 @@ import {
   CpuIcon,
   ZapIcon,
   SparklesIcon,
-  FileTextIcon,
   FolderIcon,
   LayersIcon,
   CloseIcon,
@@ -494,49 +493,6 @@ function HomePage() {
             </span>
           </div>
         </div>
-
-        {/* Interactive Liquid Glass Visualizer */}
-        <div className="hero-visual" aria-label="KnowTheFile live document visualizer">
-          <div className="visual-ambient-orb" />
-          <div className="visual-orbit orbit-inner" />
-          <div className="visual-orbit orbit-outer" />
-
-          {/* Node: Input */}
-          <div className="glass-node-card node-input">
-            <div className="node-icon-box">
-              <FileTextIcon size={18} />
-            </div>
-            <div className="node-meta">
-              <small style={{ color: '#ffd21a', fontWeight: 800, fontSize: '10px', letterSpacing: '0.04em' }}>Input File</small>
-              <strong>Annual_Report.pdf</strong>
-              <span>2.4 MB · 16 Pages</span>
-            </div>
-          </div>
-
-          {/* Center Hub */}
-          <div className="visual-center-hub">
-            <img src="/kf-logo.png" alt="KnowTheFile Logo" style={{ width: '52px', height: '52px', objectFit: 'contain', borderRadius: '10px', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))' }} />
-            <small style={{ color: '#000000', fontWeight: 800, fontSize: '9px', letterSpacing: '0.04em', marginTop: '2px' }}>On-Device</small>
-          </div>
-
-          {/* Node: Output */}
-          <div className="glass-node-card node-output">
-            <div className="node-icon-box">
-              <ShieldCheckIcon size={18} />
-            </div>
-            <div className="node-meta">
-              <small className="ready-badge" style={{ textTransform: 'none', letterSpacing: '0.04em' }}>Verified Output</small>
-              <strong>Report-Merged.pdf</strong>
-              <span>Ready for Download</span>
-            </div>
-          </div>
-
-          {/* Node: Status */}
-          <div className="glass-node-card node-status">
-            <span className="dot" style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 10px #4ade80' }} />
-            <span style={{ color: '#d4d4d4', fontWeight: 700, fontSize: '11px' }}>Local WebAssembly Pipeline Active</span>
-          </div>
-        </div>
       </section>
 
       {/* Metric Strip */}
@@ -546,7 +502,7 @@ function HomePage() {
             <CpuIcon size={26} />
           </div>
           <div className="metric-info">
-            <b>13</b>
+            <b>17</b>
             <span>Browser-Accelerated Tools</span>
           </div>
         </div>
@@ -873,7 +829,7 @@ function PricingPage() {
     <section className="page-section pricing-page">
       <PageMeta
         title="Transparent Pricing & Architecture — KnowTheFile"
-        description="Explore KnowTheFile pricing. All 13 core on-device document tools are 100% free and client-side today."
+        description="Explore KnowTheFile pricing. All 17 core on-device document tools are 100% free and client-side today."
         canonicalPath="/pricing"
         keywords="free pdf tools, pdf editor pricing, document processing cost, knowthefile plans"
       />
@@ -889,7 +845,7 @@ function PricingPage() {
           price="₹0"
           description="Everything you need for private, unlimited on-device document operations."
           features={[
-            'All 13 browser-ready tools',
+            'All 17 browser-ready tools',
             '100% private on-device execution',
             '100 MB per-file processing limit',
             'Zero cloud tracking or retention'
@@ -1326,7 +1282,7 @@ function BillingUnavailable({ title }: { title: string }) {
     <section className="empty-workspace">
       <SparklesIcon size={40} color="#ffd21a" />
       <h2>{title}</h2>
-      <p>There are no active billing charges or subscription requirements for browser-ready tools. Start using all 13 local tools for free.</p>
+      <p>There are no active billing charges or subscription requirements for browser-ready tools. Start using all 17 local tools for free.</p>
       <Link className="button button-primary" to="/pricing">
         <span>View Pricing Plans</span>
         <ArrowRightIcon size={16} />

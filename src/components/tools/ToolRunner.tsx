@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import JSZip from 'jszip'
 import { Link } from 'react-router-dom'
-import { browserDocumentProcessor, parsePageRange, serverDocumentProcessor } from '../../services/documentProcessor'
+import { browserDocumentProcessor, formatPageNumbersToRange, parsePageRange, serverDocumentProcessor } from '../../services/documentProcessor'
 import { pdfToImages, pdfToText } from '../../services/pdfReadService'
 import type { ProcessedDocument, ToolDefinition } from '../../types'
 import { useToast } from '../common/Toast'
@@ -87,16 +87,57 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     setFiles(updated)
   }
 
-  const togglePageInCustomRange = (pageNumber: number) => {
-    const current = range.split(',').map((s) => s.trim()).filter(Boolean)
-    const pageStr = String(pageNumber)
-    let next: string[]
-    if (current.includes(pageStr)) {
-      next = current.filter((p) => p !== pageStr)
+  // Synchronized set of 1-indexed page numbers
+  const selectedPagesSet = useMemo(() => {
+    if (!range.trim() || !pageCount) return new Set<number>()
+    const parsed = parsePageRange(range, pageCount)
+    if (parsed.error || !parsed.pages) return new Set<number>()
+    return new Set<number>(parsed.pages.map((p) => p + 1))
+  }, [range, pageCount])
+
+  const togglePage = (pageNumber: number) => {
+    const next = new Set(selectedPagesSet)
+    if (next.has(pageNumber)) {
+      next.delete(pageNumber)
     } else {
-      next = [...current, pageStr].sort((a, b) => Number(a) - Number(b))
+      next.add(pageNumber)
     }
-    setRange(next.join(', '))
+    setRange(formatPageNumbersToRange(Array.from(next)))
+  }
+
+  const setAllPages = () => {
+    if (!pageCount) return
+    const all = Array.from({ length: pageCount }, (_, i) => i + 1)
+    setRange(formatPageNumbersToRange(all))
+  }
+
+  const setOddPages = () => {
+    if (!pageCount) return
+    const odd = Array.from({ length: pageCount }, (_, i) => i + 1).filter((p) => p % 2 === 1)
+    setRange(formatPageNumbersToRange(odd))
+  }
+
+  const setEvenPages = () => {
+    if (!pageCount) return
+    const even = Array.from({ length: pageCount }, (_, i) => i + 1).filter((p) => p % 2 === 0)
+    setRange(formatPageNumbersToRange(even))
+  }
+
+  const addFirstPage = () => {
+    const next = new Set(selectedPagesSet)
+    next.add(1)
+    setRange(formatPageNumbersToRange(Array.from(next)))
+  }
+
+  const addLastPage = () => {
+    if (!pageCount) return
+    const next = new Set(selectedPagesSet)
+    next.add(pageCount)
+    setRange(formatPageNumbersToRange(Array.from(next)))
+  }
+
+  const clearSelection = () => {
+    setRange('')
   }
 
   const settings = useMemo(() => {
@@ -134,6 +175,9 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
       )
     }
     if (tool.id === 'split-pdf') {
+      const selectedCount = selectedPagesSet.size
+      const total = pageCount ?? 0
+
       return (
         <div style={{ display: 'grid', gap: '14px' }}>
           <label>
@@ -152,26 +196,82 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
           </label>
 
           {splitMode === 'custom' && (
-            <div>
+            <div style={{ display: 'grid', gap: '10px' }}>
               <label>
                 Page Range or Numbers
                 <input
                   value={range}
                   onChange={(e) => setRange(e.target.value)}
-                  placeholder="e.g. 1-3, 5"
+                  placeholder="e.g. 1-3, 5, 8"
                 />
               </label>
-              {pageCount && pageCount > 1 && pageCount <= 24 && (
-                <div style={{ marginTop: '10px' }}>
-                  <small style={{ color: '#a3a3a3', display: 'block', marginBottom: '6px' }}>Click to select pages:</small>
+
+              {total > 1 && (
+                <div>
+                  <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                    Quick Selection:
+                  </span>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {Array.from({ length: pageCount }, (_, i) => i + 1).map((num) => {
-                      const isSelected = range.split(',').map((s) => s.trim()).includes(String(num))
+                    <button
+                      type="button"
+                      onClick={setAllPages}
+                      style={{ padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={setOddPages}
+                      style={{ padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+                    >
+                      Odd Pages
+                    </button>
+                    <button
+                      type="button"
+                      onClick={setEvenPages}
+                      style={{ padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+                    >
+                      Even Pages
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      style={{ padding: '4px 10px', borderRadius: '6px', background: 'rgba(251,113,133,0.1)', border: '1px solid rgba(251,113,133,0.3)', color: '#fb7185', fontSize: '11px', cursor: 'pointer' }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {total > 0 && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600 }}>Click pages to select ({total} pages):</span>
+                    <span style={{ fontSize: '11px', color: selectedCount > 0 ? '#ffd21a' : '#737373', fontWeight: 700 }}>
+                      {selectedCount} selected
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '6px',
+                      flexWrap: 'wrap',
+                      maxHeight: '150px',
+                      overflowY: 'auto',
+                      padding: '8px',
+                      background: 'rgba(0,0,0,0.3)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.06)'
+                    }}
+                  >
+                    {Array.from({ length: total }, (_, i) => i + 1).map((num) => {
+                      const isSelected = selectedPagesSet.has(num)
                       return (
                         <button
                           type="button"
                           key={num}
-                          onClick={() => togglePageInCustomRange(num)}
+                          onClick={() => togglePage(num)}
                           style={{
                             minWidth: '32px',
                             height: '32px',
@@ -181,7 +281,11 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
                             border: isSelected ? '1px solid #ffd21a' : '1px solid rgba(255,255,255,0.12)',
                             fontWeight: 700,
                             fontSize: '12px',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease'
                           }}
                         >
                           {num}
@@ -197,6 +301,9 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
       )
     }
     if (tool.id === 'rotate-pdf') {
+      const total = pageCount ?? 0
+      const selectedCount = selectedPagesSet.size
+
       return (
         <div style={{ display: 'grid', gap: '14px' }}>
           <label>
@@ -212,12 +319,68 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
             <input
               value={range}
               onChange={(event) => setRange(event.target.value)}
-              placeholder="Leave blank for entire document or enter e.g. 1, 3"
+              placeholder="Leave blank for all pages, or e.g. 1, 3-5"
             />
             <small style={{ color: '#737373', marginTop: '4px', display: 'block' }}>
-              Leave blank to rotate all pages in the PDF.
+              {range.trim()
+                ? `Rotating ${selectedCount} specific ${selectedCount === 1 ? 'page' : 'pages'}.`
+                : 'Leaving blank will rotate every page in the PDF.'}
             </small>
           </label>
+
+          {total > 1 && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600 }}>Target Specific Pages:</span>
+                {range.trim() && (
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    style={{ background: 'none', border: 'none', color: '#ffd21a', fontSize: '11px', cursor: 'pointer', padding: 0 }}
+                  >
+                    Reset to All Pages
+                  </button>
+                )}
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  maxHeight: '140px',
+                  overflowY: 'auto',
+                  padding: '8px',
+                  background: 'rgba(0,0,0,0.3)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}
+              >
+                {Array.from({ length: total }, (_, i) => i + 1).map((num) => {
+                  const isSelected = selectedPagesSet.has(num)
+                  return (
+                    <button
+                      type="button"
+                      key={num}
+                      onClick={() => togglePage(num)}
+                      style={{
+                        minWidth: '32px',
+                        height: '32px',
+                        borderRadius: '6px',
+                        background: isSelected ? '#ffd21a' : 'rgba(255,255,255,0.06)',
+                        color: isSelected ? '#000000' : '#ffffff',
+                        border: isSelected ? '1px solid #ffd21a' : '1px solid rgba(255,255,255,0.12)',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {num}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )
     }
@@ -319,8 +482,401 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         </div>
       )
     }
+    if (tool.id === 'delete-pages') {
+      const deleteCount = selectedPagesSet.size
+      const total = pageCount ?? 0
+      const remainCount = total ? total - deleteCount : 0
+      const allSelected = total > 0 && deleteCount >= total
+
+      return (
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <div>
+            <label>
+              Pages to Delete
+              <input
+                value={range}
+                onChange={(e) => setRange(e.target.value)}
+                placeholder="e.g. 1-3, 5, 8"
+              />
+            </label>
+            <small style={{ color: '#a3a3a3', marginTop: '4px', display: 'block', fontSize: '11px' }}>
+              Enter page numbers/ranges or click buttons below to mark pages for removal.
+            </small>
+          </div>
+
+          {total > 1 && (
+            <div>
+              <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                Quick Presets:
+              </span>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={addFirstPage}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  + First Page
+                </button>
+                <button
+                  type="button"
+                  onClick={addLastPage}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  + Last Page
+                </button>
+                <button
+                  type="button"
+                  onClick={setOddPages}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Odd Pages
+                </button>
+                <button
+                  type="button"
+                  onClick={setEvenPages}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Even Pages
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(251,113,133,0.1)',
+                    border: '1px solid rgba(251,113,133,0.3)',
+                    color: '#fb7185',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          )}
+
+          {total > 0 && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600 }}>
+                  Select Pages to Delete ({total} total):
+                </span>
+                <span style={{ fontSize: '11px', color: deleteCount > 0 ? '#fb7185' : '#737373', fontWeight: 700 }}>
+                  {deleteCount} to delete
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  padding: '10px',
+                  background: 'rgba(0,0,0,0.4)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}
+              >
+                {Array.from({ length: total }, (_, i) => i + 1).map((num) => {
+                  const isMarked = selectedPagesSet.has(num)
+                  return (
+                    <button
+                      type="button"
+                      key={num}
+                      onClick={() => togglePage(num)}
+                      style={{
+                        minWidth: '34px',
+                        height: '34px',
+                        borderRadius: '6px',
+                        background: isMarked ? '#ef4444' : 'rgba(255,255,255,0.06)',
+                        color: isMarked ? '#ffffff' : '#e5e5e5',
+                        border: isMarked ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.12)',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textDecoration: isMarked ? 'line-through' : 'none',
+                        boxShadow: isMarked ? '0 0 10px rgba(239,68,68,0.4)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={isMarked ? `Page ${num} will be deleted` : `Click to mark Page ${num} for deletion`}
+                    >
+                      {num}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {total > 0 && (
+            <div
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                background: allSelected ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                border: allSelected ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+                fontSize: '12px',
+                lineHeight: 1.5
+              }}
+            >
+              {allSelected ? (
+                <span style={{ color: '#ef4444', fontWeight: 600 }}>
+                  ⚠️ Cannot delete all pages. A PDF must retain at least one page.
+                </span>
+              ) : deleteCount === 0 ? (
+                <span style={{ color: '#ffd21a' }}>
+                  ℹ️ Click pages above or enter page numbers to mark them for deletion.
+                </span>
+              ) : (
+                <div style={{ display: 'grid', gap: '4px' }}>
+                  <span style={{ color: '#fb7185', fontWeight: 600 }}>
+                    🗑️ {deleteCount} {deleteCount === 1 ? 'page' : 'pages'} will be permanently removed
+                  </span>
+                  <span style={{ color: '#22c55e', fontWeight: 600 }}>
+                    ✓ {remainCount} {remainCount === 1 ? 'page' : 'pages'} will remain in your document
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (tool.id === 'extract-pdf') {
+      const extractCount = selectedPagesSet.size
+      const total = pageCount ?? 0
+
+      return (
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <div>
+            <label>
+              Pages to Extract
+              <input
+                value={range}
+                onChange={(e) => setRange(e.target.value)}
+                placeholder="e.g. 1-3, 5, 8"
+              />
+            </label>
+            <small style={{ color: '#a3a3a3', marginTop: '4px', display: 'block', fontSize: '11px' }}>
+              Enter page numbers/ranges or click buttons below to select pages to export.
+            </small>
+          </div>
+
+          {total > 1 && (
+            <div>
+              <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                Quick Selection:
+              </span>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={setAllPages}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={setOddPages}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Odd Pages
+                </button>
+                <button
+                  type="button"
+                  onClick={setEvenPages}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Even Pages
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(251,113,133,0.1)',
+                    border: '1px solid rgba(251,113,133,0.3)',
+                    color: '#fb7185',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {total > 0 && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: '#a3a3a3', fontWeight: 600 }}>
+                  Pages to Extract ({total} total):
+                </span>
+                <span style={{ fontSize: '11px', color: extractCount > 0 ? '#ffd21a' : '#737373', fontWeight: 700 }}>
+                  {extractCount} selected
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  padding: '10px',
+                  background: 'rgba(0,0,0,0.4)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}
+              >
+                {Array.from({ length: total }, (_, i) => i + 1).map((num) => {
+                  const isSelected = selectedPagesSet.has(num)
+                  return (
+                    <button
+                      type="button"
+                      key={num}
+                      onClick={() => togglePage(num)}
+                      style={{
+                        minWidth: '34px',
+                        height: '34px',
+                        borderRadius: '6px',
+                        background: isSelected ? '#ffd21a' : 'rgba(255,255,255,0.06)',
+                        color: isSelected ? '#000000' : '#ffffff',
+                        border: isSelected ? '1px solid #ffd21a' : '1px solid rgba(255,255,255,0.12)',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: isSelected ? '0 0 10px rgba(255,210,26,0.35)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={isSelected ? `Page ${num} will be extracted` : `Click to select Page ${num} for extraction`}
+                    >
+                      {num}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {total > 0 && (
+            <div
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                fontSize: '12px',
+                lineHeight: 1.5
+              }}
+            >
+              {extractCount === 0 ? (
+                <span style={{ color: '#ffd21a' }}>
+                  ℹ️ Click pages above or enter page numbers to extract them.
+                </span>
+              ) : (
+                <span style={{ color: '#ffd21a', fontWeight: 600 }}>
+                  📄 {extractCount} {extractCount === 1 ? 'page' : 'pages'} will be extracted into a new PDF.
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (tool.id === 'pdf-to-text') {
+      return (
+        <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '12px', color: '#d4d4d4', lineHeight: 1.6 }}>
+          <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '6px' }}>On-Device Text Extraction</strong>
+          Extracts all selectable vector and body text directly from the document into a clean, searchable plain text (.txt) file. 100% private in-browser execution.
+        </div>
+      )
+    }
+    if (tool.id === 'pdf-to-word') {
+      return (
+        <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '12px', color: '#d4d4d4', lineHeight: 1.6 }}>
+          <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '6px' }}>Client-Side DOCX Engine</strong>
+          Extracts and converts document text, headings, and paragraph structures directly into an editable Microsoft Word (.docx) file without cloud uploads.
+        </div>
+      )
+    }
+    if (tool.id === 'word-to-pdf') {
+      return (
+        <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '12px', color: '#d4d4d4', lineHeight: 1.6 }}>
+          <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '6px' }}>Word to Standard PDF</strong>
+          Converts .docx documents directly in your browser with standard typography and headings into a universal PDF file.
+        </div>
+      )
+    }
     return null
-  }, [tool.id, compressLevel, splitMode, range, pageCount, angle, watermark, signature, password, position, imageFit, imageFormat, imageDpi, metadata])
+  }, [tool.id, compressLevel, splitMode, range, pageCount, angle, watermark, signature, password, position, imageFit, imageFormat, imageDpi, metadata, selectedPagesSet])
 
   const run = async () => {
     setError('')
@@ -458,6 +1014,18 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     if (status === 'processing') return false
     if (!files.length) return false
     if (tool.id === 'merge-pdf' && files.length < 2) return false
+    if (tool.id === 'delete-pages') {
+      if (!range.trim() || selectedPagesSet.size === 0) return false
+      if (pageCount && selectedPagesSet.size >= pageCount) return false
+    }
+    if (tool.id === 'extract-pdf') {
+      if (!range.trim() || selectedPagesSet.size === 0) return false
+    }
+    if (tool.id === 'split-pdf' && splitMode === 'custom') {
+      if (!range.trim() || selectedPagesSet.size === 0) return false
+    }
+    if (tool.id === 'watermark-pdf' && !watermark.trim()) return false
+    if (tool.id === 'sign-pdf' && !signature.trim()) return false
     return true
   }
 
@@ -581,6 +1149,210 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
                   <span>Document loaded · {pageCount} {pageCount === 1 ? 'page' : 'pages'} verified</span>
                 </div>
               )}
+
+              {/* Interactive Document Page Gallery for Delete & Extract Tools */}
+              {(tool.id === 'delete-pages' || tool.id === 'extract-pdf') && first && pageCount && pageCount > 0 && (
+                <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <strong style={{ fontSize: '14px', color: '#ffffff', display: 'block' }}>
+                        {tool.id === 'delete-pages' ? 'Document Pages — Click Any Page to Delete' : 'Document Pages — Click Any Page to Extract'}
+                      </strong>
+                      <span style={{ fontSize: '12px', color: '#a3a3a3' }}>
+                        {tool.id === 'delete-pages'
+                          ? `${selectedPagesSet.size} of ${pageCount} pages marked for deletion`
+                          : `${selectedPagesSet.size} of ${pageCount} pages selected for export`}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {tool.id === 'delete-pages' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={setOddPages}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                          >
+                            Odd
+                          </button>
+                          <button
+                            type="button"
+                            onClick={setEvenPages}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                          >
+                            Even
+                          </button>
+                          <button
+                            type="button"
+                            onClick={clearSelection}
+                            style={{ background: 'rgba(251,113,133,0.1)', border: '1px solid rgba(251,113,133,0.3)', color: '#fb7185', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                          >
+                            Keep All
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={setAllPages}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={clearSelection}
+                            style={{ background: 'rgba(251,113,133,0.1)', border: '1px solid rgba(251,113,133,0.3)', color: '#fb7185', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                          >
+                            Clear
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(115px, 1fr))',
+                      gap: '12px',
+                      maxHeight: '440px',
+                      overflowY: 'auto',
+                      padding: '4px'
+                    }}
+                  >
+                    {Array.from({ length: pageCount }, (_, i) => i + 1).map((num) => {
+                      const isDeleteMode = tool.id === 'delete-pages'
+                      const isMarked = selectedPagesSet.has(num)
+
+                      return (
+                        <div
+                          key={num}
+                          onClick={() => togglePage(num)}
+                          style={{
+                            position: 'relative',
+                            borderRadius: '10px',
+                            border: isDeleteMode
+                              ? isMarked
+                                ? '2px solid #ef4444'
+                                : '1px solid rgba(255,255,255,0.1)'
+                              : isMarked
+                              ? '2px solid #ffd21a'
+                              : '1px solid rgba(255,255,255,0.1)',
+                            background: isDeleteMode
+                              ? isMarked
+                                ? 'rgba(239,68,68,0.12)'
+                                : 'rgba(20,20,20,0.85)'
+                              : isMarked
+                              ? 'rgba(255,210,26,0.1)'
+                              : 'rgba(20,20,20,0.85)',
+                            padding: '10px 8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '8px',
+                            transition: 'all 0.2s ease',
+                            boxShadow: isDeleteMode && isMarked ? '0 0 16px rgba(239,68,68,0.25)' : 'none'
+                          }}
+                        >
+                          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#ffffff' }}>Page {num}</span>
+                            {isDeleteMode ? (
+                              <span
+                                style={{
+                                  fontSize: '9px',
+                                  fontWeight: 800,
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  background: isMarked ? '#ef4444' : 'rgba(34,197,94,0.15)',
+                                  color: isMarked ? '#ffffff' : '#4ade80',
+                                  border: isMarked ? 'none' : '1px solid rgba(34,197,94,0.3)',
+                                  letterSpacing: '0.5px'
+                                }}
+                              >
+                                {isMarked ? 'DELETE' : 'KEEP'}
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '9px',
+                                  fontWeight: 800,
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  background: isMarked ? '#ffd21a' : 'rgba(255,255,255,0.06)',
+                                  color: isMarked ? '#000000' : '#a3a3a3',
+                                  letterSpacing: '0.5px'
+                                }}
+                              >
+                                {isMarked ? 'EXTRACT' : 'SKIP'}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Document sheet representation */}
+                          <div
+                            style={{
+                              width: '64px',
+                              height: '84px',
+                              background: isDeleteMode && isMarked ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)',
+                              borderRadius: '6px',
+                              border: isDeleteMode && isMarked ? '1px dashed rgba(239,68,68,0.6)' : '1px solid rgba(255,255,255,0.12)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              position: 'relative',
+                              gap: '4px'
+                            }}
+                          >
+                            {isDeleteMode && isMarked ? (
+                              <TrashIcon size={24} color="#ef4444" />
+                            ) : (
+                              <>
+                                <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.2)', borderRadius: '2px' }} />
+                                <div style={{ width: '42px', height: '4px', background: 'rgba(255,255,255,0.15)', borderRadius: '2px' }} />
+                                <div style={{ width: '28px', height: '4px', background: 'rgba(255,255,255,0.12)', borderRadius: '2px' }} />
+                                <span style={{ position: 'absolute', bottom: '4px', fontSize: '10px', color: '#a3a3a3', fontWeight: 700 }}>
+                                  {num}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            style={{
+                              width: '100%',
+                              padding: '4px 0',
+                              borderRadius: '5px',
+                              border: 'none',
+                              background: isDeleteMode
+                                ? isMarked
+                                  ? 'rgba(239,68,68,0.2)'
+                                  : 'rgba(255,255,255,0.06)'
+                                : isMarked
+                                ? '#ffd21a'
+                                : 'rgba(255,255,255,0.06)',
+                              color: isDeleteMode
+                                ? isMarked
+                                  ? '#fb7185'
+                                  : '#e5e5e5'
+                                : isMarked
+                                ? '#000000'
+                                : '#e5e5e5',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {isDeleteMode ? (isMarked ? 'Marked' : 'Delete') : isMarked ? 'Selected' : 'Select'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <aside className="settings-card">
@@ -627,6 +1399,20 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
                         ? files.length >= 2
                           ? `Merge ${files.length} PDFs`
                           : 'Select 2+ PDFs to Merge'
+                        : tool.id === 'delete-pages'
+                        ? !first
+                          ? 'Upload PDF to Delete Pages'
+                          : selectedPagesSet.size === 0
+                          ? 'Select Pages to Delete'
+                          : pageCount && selectedPagesSet.size >= pageCount
+                          ? 'Cannot Delete All Pages'
+                          : `Delete ${selectedPagesSet.size} ${selectedPagesSet.size === 1 ? 'Page' : 'Pages'}`
+                        : tool.id === 'extract-pdf'
+                        ? !first
+                          ? 'Upload PDF to Extract Pages'
+                          : selectedPagesSet.size === 0
+                          ? 'Select Pages to Extract'
+                          : `Extract ${selectedPagesSet.size} ${selectedPagesSet.size === 1 ? 'Page' : 'Pages'}`
                         : `Process ${tool.name}`}
                     </span>
                   </>
@@ -714,7 +1500,12 @@ function ResultCard({
           <button
             type="button"
             className="button button-ghost"
-            onClick={() => window.open(URL.createObjectURL(result.blob), '_blank', 'noopener,noreferrer')}
+            onClick={() => {
+              const url = URL.createObjectURL(result.blob)
+              window.open(url, '_blank', 'noopener,noreferrer')
+              // Revoke after 60 s — enough time for the new tab to load the blob
+              setTimeout(() => URL.revokeObjectURL(url), 60000)
+            }}
           >
             <EyeIcon size={16} />
             <span>Live Preview</span>

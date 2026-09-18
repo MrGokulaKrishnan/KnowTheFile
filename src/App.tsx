@@ -6,6 +6,7 @@ import { useAuth } from './components/auth/AuthProvider'
 import { findTool, tools } from './config/tools'
 import { ToolRunner } from './components/tools/ToolRunner'
 import { PDFEditorPage } from './pages/PDFEditorPage'
+import { ReportBugModal } from './components/support/ReportBugModal'
 import { useToast } from './components/common/Toast'
 import { historyService, type DocumentHistoryEntry } from './services/historyService'
 import { formatBytes } from './components/upload/FileUploader'
@@ -23,6 +24,7 @@ import {
   CloseIcon,
   HelpIcon,
   EditorIcon,
+  BugIcon,
   TrashIcon
 } from './components/common/Icons'
 
@@ -1603,49 +1605,54 @@ function SupportRoute() {
 }
 
 function SupportPage() {
+  const [isBugModalOpen, setBugModalOpen] = useState(false)
+
   return (
-    <section className="page-section">
-      <p className="eyebrow">TECHNICAL SUPPORT</p>
-      <h1>Get help with your documents.</h1>
-      <p className="page-lede">
-        If a browser tool runs into an issue, keep your source file on your machine and share the tool name, browser version, and error message.
-      </p>
-      <div className="feature-cards" style={{ marginTop: '40px' }}>
-        <article className="feature-card">
-          <div className="feature-icon-badge">
-            <CpuIcon size={20} />
-          </div>
-          <h3 style={{ marginTop: '16px' }}>Using Browser Tools</h3>
-          <p>Learn about supported MIME types, memory limits, and WebAssembly acceleration.</p>
-          <Link to="/tools" className="text-button" style={{ marginTop: '16px' }}>
-            <span>Browse Tools</span>
-            <ArrowRightIcon size={14} />
-          </Link>
-        </article>
-        <article className="feature-card">
-          <div className="feature-icon-badge">
-            <ShieldCheckIcon size={20} />
-          </div>
-          <h3 style={{ marginTop: '16px' }}>Account & Security</h3>
-          <p>Understand how Firebase identity and security rules protect your private workspace.</p>
-          <Link to="/security" className="text-button" style={{ marginTop: '16px' }}>
-            <span>Security Details</span>
-            <ArrowRightIcon size={14} />
-          </Link>
-        </article>
-        <article className="feature-card">
-          <div className="feature-icon-badge">
-            <HelpIcon size={20} />
-          </div>
-          <h3 style={{ marginTop: '16px' }}>Vulnerability Disclosure</h3>
-          <p>Report suspected security vulnerabilities directly to our engineering team.</p>
-          <Link to="/responsible-disclosure" className="text-button" style={{ marginTop: '16px' }}>
-            <span>Disclosure Policy</span>
-            <ArrowRightIcon size={14} />
-          </Link>
-        </article>
-      </div>
-    </section>
+    <>
+      <section className="page-section">
+        <p className="eyebrow">TECHNICAL SUPPORT</p>
+        <h1>Get help with your documents.</h1>
+        <p className="page-lede">
+          If a browser tool runs into an issue, keep your source file on your machine and share the tool name, browser version, and error message.
+        </p>
+        <div className="feature-cards" style={{ marginTop: '40px' }}>
+          <article className="feature-card">
+            <div className="feature-icon-badge">
+              <BugIcon size={20} />
+            </div>
+            <h3 style={{ marginTop: '16px' }}>Report an Issue</h3>
+            <p>Encountered a bug or an unexpected error? Share details with our engineering team directly.</p>
+            <button type="button" className="text-button" style={{ marginTop: '16px', background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer' }} onClick={() => setBugModalOpen(true)}>
+              <span>Report a Bug</span>
+              <ArrowRightIcon size={14} />
+            </button>
+          </article>
+          <article className="feature-card">
+            <div className="feature-icon-badge">
+              <CpuIcon size={20} />
+            </div>
+            <h3 style={{ marginTop: '16px' }}>Using Browser Tools</h3>
+            <p>Learn about supported MIME types, memory limits, and WebAssembly acceleration.</p>
+            <Link to="/tools" className="text-button" style={{ marginTop: '16px' }}>
+              <span>Browse Tools</span>
+              <ArrowRightIcon size={14} />
+            </Link>
+          </article>
+          <article className="feature-card">
+            <div className="feature-icon-badge">
+              <HelpIcon size={20} />
+            </div>
+            <h3 style={{ marginTop: '16px' }}>Contact Developer</h3>
+            <p>For custom integrations or direct inquiries, contact the developer: Gokulakrishnan K.</p>
+            <a href="mailto:gokulakrishnan.k.cseacet@gmail.com?subject=Website%20Contact" className="text-button" style={{ marginTop: '16px' }}>
+              <span>Contact Developer</span>
+              <ArrowRightIcon size={14} />
+            </a>
+          </article>
+        </div>
+      </section>
+      <ReportBugModal isOpen={isBugModalOpen} onClose={() => setBugModalOpen(false)} />
+    </>
   )
 }
 

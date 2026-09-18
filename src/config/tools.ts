@@ -11,13 +11,14 @@ export const tools: ToolDefinition[] = [
   { id: 'watermark-pdf', name: 'Watermark PDF', description: 'Stamp custom semi-transparent text watermarks across selected pages.', category: 'Edit', availability: 'browser', accent: 'watermark-pdf', tag: 'Protection' },
   { id: 'page-numbers', name: 'Add Page Numbers', description: 'Stamp automated sequential page numbering with customized positioning.', category: 'Edit', availability: 'browser', accent: 'page-numbers', tag: 'Layout' },
   { id: 'metadata-pdf', name: 'Edit Metadata', description: 'Inspect and modify title, author, subject, and keyword document tags.', category: 'Edit', availability: 'browser', accent: 'metadata-pdf', tag: 'Inspector' },
-  { id: 'pdf-editor', name: 'PDF Editor', description: 'Add dynamic text overlays, notes, and annotations in a live studio canvas.', category: 'Edit', availability: 'browser', accent: 'pdf-editor', tag: 'Studio' },
+  { id: 'pdf-editor', name: 'PDF Editor', description: 'Direct in-place text editing, visual annotations, and custom text stamps in a live canvas studio.', category: 'Edit', availability: 'browser', accent: 'pdf-editor', tag: 'Direct Edit' },
+  { id: 'pdf-word-editor', name: 'Word-Style PDF Editor', description: 'Edit PDF text like Microsoft Word with flowing paragraphs, rich typography, and instant PDF/DOCX export.', category: 'Edit', availability: 'browser', accent: 'pdf-editor', tag: 'Word Flow' },
   { id: 'pdf-to-image', name: 'PDF to Image', description: 'Render high-resolution PNG or JPG image exports from PDF pages.', category: 'Convert', availability: 'browser', accent: 'pdf-to-image', tag: '300 DPI' },
   { id: 'pdf-to-text', name: 'PDF to Text', description: 'Extract all readable document text directly into clean, searchable copy.', category: 'Convert', availability: 'browser', accent: 'pdf-to-text', tag: 'Direct OCR' },
   { id: 'pdf-to-word', name: 'PDF to Word', description: 'Convert PDF documents into editable Microsoft Word DOCX formatting.', category: 'Convert', availability: 'browser', accent: 'pdf-to-word', tag: 'DOCX' },
   { id: 'word-to-pdf', name: 'Word to PDF', description: 'Transform DOCX files into standard, faithfully rendered PDF documents.', category: 'Convert', availability: 'browser', accent: 'word-to-pdf', tag: 'Converter' },
   { id: 'sign-pdf', name: 'Sign PDF', description: 'Draw and place visual signature stamps across document signature fields.', category: 'Secure', availability: 'browser', accent: 'sign-pdf', tag: 'Signature' },
-  { id: 'protect-pdf', name: 'Protect PDF', description: 'Encrypt sensitive documents with standard AES password security.', category: 'Secure', availability: 'server', accent: 'protect-pdf', tag: 'AES-256' },
+  { id: 'protect-pdf', name: 'Protect PDF', description: 'Encrypt sensitive documents with standard AES password security.', category: 'Secure', availability: 'browser', accent: 'protect-pdf', tag: 'AES-256' },
   { id: 'unlock-pdf', name: 'Unlock PDF', description: 'Remove password protection from authorized documents with your passphrase.', category: 'Secure', availability: 'browser', accent: 'unlock-pdf', tag: 'Decryption' },
 ]
 

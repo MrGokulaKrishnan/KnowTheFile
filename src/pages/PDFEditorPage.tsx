@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx'
 import { Link } from 'react-router-dom'
 import { FileUploader } from '../components/upload/FileUploader'
 import { useToast } from '../components/common/Toast'
@@ -11,6 +12,8 @@ import {
   DownloadIcon,
   TrashIcon,
   EditorIcon,
+  WordIcon,
+  CheckIcon,
 } from '../components/common/Icons'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
@@ -30,6 +33,16 @@ export interface EditorElement {
   backgroundColor: string
   bold: boolean
   italic: boolean
+}
+
+export interface DetectedTextSnippet {
+  id: string
+  str: string
+  x: number
+  y: number
+  width: number
+  height: number
+  fontSize: number
 }
 
 const COLOR_PRESETS = [
@@ -67,8 +80,18 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   }
 }
 
-export function PDFEditorPage() {
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+export function PDFEditorPage({ defaultMode = 'word' }: { defaultMode?: 'word' | 'canvas' }) {
   const toast = useToast()
+  const [activeMode, setActiveMode] = useState<'word' | 'canvas'>(defaultMode)
   const [files, setFiles] = useState<File[]>([])
   const [pageCount, setPageCount] = useState(0)
   const [activePage, setActivePage] = useState(0)
@@ -80,11 +103,20 @@ export function PDFEditorPage() {
   const [pdfDocProxy, setPdfDocProxy] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number }>({ width: 612, height: 792 })
 
+  // Solution B: In-place text snippets
+  const [detectedSnippets, setDetectedSnippets] = useState<DetectedTextSnippet[]>([])
+  const [hoveredSnippetId, setHoveredSnippetId] = useState<string | null>(null)
+
+  // Solution A: Word Document Mode State
+  const [wordHtml, setWordHtml] = useState<string>('')
+  const [isExtractingWord, setIsExtractingWord] = useState(false)
+  const wordEditorRef = useRef<HTMLDivElement | null>(null)
+
   // Draft state for new text tools
   const [draftText, setDraftText] = useState('Edited Text')
   const [draftSize, setDraftSize] = useState(16)
   const [draftColor, setDraftColor] = useState('#000000')
-  const [draftBg, setDraftBg] = useState('#ffffff')
+  const draftBg = '#ffffff'
   const [draftFont, setDraftFont] = useState<'Helvetica' | 'HelveticaBold' | 'Times' | 'Courier'>('HelveticaBold')
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -100,7 +132,12 @@ export function PDFEditorPage() {
     document.body.scrollTop = 0
   }, [])
 
-  // Load PDF into PDF.js document proxy
+  // Sync defaultMode if changed from props
+  useEffect(() => {
+    if (defaultMode) setActiveMode(defaultMode)
+  }, [defaultMode])
+
+  // Load PDF into PDF.js document proxy and extract Word structure
   useEffect(() => {
     if (!file) {
       setPageCount(0)
@@ -108,21 +145,81 @@ export function PDFEditorPage() {
       setElements([])
       setSelectedId(null)
       setPdfDocProxy(null)
+      setWordHtml('')
+      setDetectedSnippets([])
       return
     }
 
     let isSubscribed = true
+
     void (async () => {
       try {
         const bytes = await file.arrayBuffer()
         const pdf = await pdfjsLib.getDocument({ data: bytes }).promise
+        if (!isSubscribed) return
+
+        setPdfDocProxy(pdf)
+        setPageCount(pdf.numPages)
+        setActivePage(0)
+
+        // Extract Word Mode HTML structure
+        setIsExtractingWord(true)
+        const htmlParts: string[] = []
+
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p)
+          const textContent = await page.getTextContent()
+
+          // Group by vertical position (Y)
+          const lineMap = new Map<number, { text: string; fontSize: number; isBold: boolean }[]>()
+
+          for (const item of textContent.items) {
+            if ('str' in item && item.str.trim()) {
+              const y = Math.round(item.transform[5] / 5) * 5
+              const fontSize = Math.sqrt(item.transform[0] * item.transform[0] + item.transform[1] * item.transform[1]) || 12
+              const isBold = (item.fontName || '').toLowerCase().includes('bold')
+
+              if (!lineMap.has(y)) lineMap.set(y, [])
+              lineMap.get(y)!.push({ text: item.str, fontSize, isBold })
+            }
+          }
+
+          const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a)
+
+          for (const y of sortedYs) {
+            const lineItems = lineMap.get(y)!
+            const lineText = lineItems.map((i) => i.text).join(' ').trim()
+            if (!lineText) continue
+
+            const maxFontSize = Math.max(...lineItems.map((i) => i.fontSize))
+            const isBold = lineItems.some((i) => i.isBold)
+
+            if (maxFontSize >= 20) {
+              htmlParts.push(`<h1>${escapeHtml(lineText)}</h1>`)
+            } else if (maxFontSize >= 15) {
+              htmlParts.push(`<h2>${escapeHtml(lineText)}</h2>`)
+            } else if (maxFontSize >= 13) {
+              htmlParts.push(`<h3>${escapeHtml(lineText)}</h3>`)
+            } else if (lineText.startsWith('•') || lineText.startsWith('-')) {
+              htmlParts.push(`<ul><li>${escapeHtml(lineText.replace(/^[•\-]\s*/, ''))}</li></ul>`)
+            } else {
+              htmlParts.push(`<p>${isBold ? `<strong>${escapeHtml(lineText)}</strong>` : escapeHtml(lineText)}</p>`)
+            }
+          }
+
+          if (p < pdf.numPages) {
+            htmlParts.push('<div class="page-break-divider"><span>--- Page Break ---</span></div>')
+          }
+        }
+
+        const initialHtml = htmlParts.join('\n') || '<p>Start typing or pasting your document content here...</p>'
         if (isSubscribed) {
-          setPdfDocProxy(pdf)
-          setPageCount(pdf.numPages)
-          setActivePage(0)
+          setWordHtml(initialHtml)
+          setIsExtractingWord(false)
         }
       } catch (error) {
         toast.show(error instanceof Error ? error.message : 'Could not load this PDF document.', 'error')
+        if (isSubscribed) setIsExtractingWord(false)
       }
     })()
 
@@ -131,7 +228,7 @@ export function PDFEditorPage() {
     }
   }, [file, toast])
 
-  // Render current page onto HTML5 canvas
+  // Render current page onto HTML5 canvas & extract in-place text snippets
   useEffect(() => {
     if (!pdfDocProxy || !canvasRef.current) return
 
@@ -159,7 +256,37 @@ export function PDFEditorPage() {
         if (!context) return
 
         await page.render({ canvas, canvasContext: context, viewport }).promise
-        if (isCurrent) setIsRendering(false)
+
+        // Extract in-place clickable text snippets for Solution B
+        const textContent = await page.getTextContent()
+        const snippets: DetectedTextSnippet[] = []
+
+        for (let i = 0; i < textContent.items.length; i++) {
+          const item = textContent.items[i]
+          if ('str' in item && item.str.trim()) {
+            const tx = item.transform
+            const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]) || 12
+            const x = (tx[4] / unscaledViewport.width) * 100
+            const y = ((unscaledViewport.height - tx[5] - fontSize) / unscaledViewport.height) * 100
+            const width = ((item.width || (item.str.length * fontSize * 0.55)) / unscaledViewport.width) * 100
+            const height = (fontSize / unscaledViewport.height) * 100 * 1.35
+
+            snippets.push({
+              id: `snippet-${activePage}-${i}`,
+              str: item.str,
+              x: Math.max(0, Math.min(95, x)),
+              y: Math.max(0, Math.min(95, y)),
+              width: Math.max(2, Math.min(98, width)),
+              height: Math.max(2, Math.min(20, height)),
+              fontSize,
+            })
+          }
+        }
+
+        if (isCurrent) {
+          setDetectedSnippets(snippets)
+          setIsRendering(false)
+        }
       } catch (error) {
         console.error('PDF render error:', error)
         if (isCurrent) setIsRendering(false)
@@ -171,12 +298,47 @@ export function PDFEditorPage() {
     }
   }, [pdfDocProxy, activePage])
 
+  // In Solution B: Click an existing text snippet on the PDF to edit in-place
+  const handleEditExistingSnippet = (snippet: DetectedTextSnippet) => {
+    // Check if snippet is already an active element
+    const existing = elements.find(
+      (el) => el.page === activePage && Math.abs(el.x - snippet.x) < 3 && Math.abs(el.y - snippet.y) < 3
+    )
+    if (existing) {
+      setSelectedId(existing.id)
+      return
+    }
+
+    const newId = Date.now()
+    const newElement: EditorElement = {
+      id: newId,
+      page: activePage,
+      type: 'text',
+      x: snippet.x,
+      y: snippet.y,
+      width: Math.max(snippet.width + 2, 16),
+      height: Math.max(snippet.height, 4),
+      text: snippet.str,
+      fontSize: Math.round(snippet.fontSize) || 14,
+      fontFamily: 'HelveticaBold',
+      color: '#000000',
+      backgroundColor: '#ffffff', // Clean whiteout masks original text underneath!
+      bold: true,
+      italic: false,
+    }
+
+    setElements((prev) => [...prev, newElement])
+    setSelectedId(newId)
+    toast.show(`Editing in-place: "${snippet.str.slice(0, 30)}"`, 'success')
+  }
+
   // Click on stage to place a text box or whiteout
   const handleStageClick = (e: MouseEvent<HTMLDivElement>) => {
     if (toolMode === 'select') return
     if (!stageRef.current) return
 
     if ((e.target as HTMLElement).closest('.editor-element-box')) return
+    if ((e.target as HTMLElement).closest('.pdf-text-snippet')) return
 
     const rect = stageRef.current.getBoundingClientRect()
     const clickX = ((e.clientX - rect.left) / rect.width) * 100
@@ -202,7 +364,7 @@ export function PDFEditorPage() {
 
     setElements((prev) => [...prev, newElement])
     setSelectedId(newId)
-    toast.show(toolMode === 'whiteout' ? 'Whiteout box placed. Drag to position.' : 'Text added. Edit in inspector.', 'success')
+    toast.show(toolMode === 'whiteout' ? 'Whiteout placed. Drag to position.' : 'Text added. Edit in inspector.', 'success')
   }
 
   // Pointer drag for re-positioning overlays
@@ -274,7 +436,6 @@ export function PDFEditorPage() {
       const outBytes = await pdf.save()
       const newFile = new File([outBytes], file.name, { type: 'application/pdf' })
 
-      // Update elements state
       setElements((prev) =>
         prev
           .filter((el) => el.page !== pageIndexToDelete)
@@ -282,19 +443,17 @@ export function PDFEditorPage() {
       )
       setSelectedId(null)
 
-      // Set new active page
       const nextActive = pageIndexToDelete >= pageCount - 1 ? Math.max(0, pageCount - 2) : pageIndexToDelete
       setActivePage(nextActive)
-
       setFiles([newFile])
-      toast.show(`Page ${pageIndexToDelete + 1} deleted from document.`, 'success')
+      toast.show(`Page ${pageIndexToDelete + 1} deleted.`, 'success')
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Could not delete this page.', 'error')
     }
   }
 
-  // Export edited PDF via pdf-lib
-  const exportPdf = async () => {
+  // Export edited PDF in Canvas Mode via pdf-lib
+  const exportCanvasPdf = async () => {
     if (!file) return
     try {
       const bytes = await file.arrayBuffer()
@@ -364,103 +523,601 @@ export function PDFEditorPage() {
     }
   }
 
+  // Solution A (Word Mode): Format text using standard document commands
+  const applyFormat = (command: string, value: string | undefined = undefined) => {
+    document.execCommand(command, false, value)
+    if (wordEditorRef.current) {
+      setWordHtml(wordEditorRef.current.innerHTML)
+    }
+  }
+
+  // Solution A: Export Word Document to PDF via pdf-lib
+  const exportWordToPdf = async () => {
+    const editorEl = wordEditorRef.current
+    if (!editorEl) return
+    const currentHtml = editorEl.innerHTML
+
+    try {
+      const pdfDoc = await PDFDocument.create()
+      const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+      const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
+
+      const pageWidth = 595.28 // A4 width
+      const pageHeight = 841.89 // A4 height
+      const margin = 54
+      const contentWidth = pageWidth - margin * 2
+      const bottomMargin = 54
+
+      let currentPage = pdfDoc.addPage([pageWidth, pageHeight])
+      let cursorY = pageHeight - margin
+
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(currentHtml, 'text/html')
+      const elementsList = Array.from(doc.body.children)
+
+      const wrapText = (text: string, font: any, size: number, maxWidth: number): string[] => {
+        const words = text.split(/\s+/)
+        const lines: string[] = []
+        let currentLine = ''
+
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word
+          const width = font.widthOfTextAtSize(testLine, size)
+          if (width > maxWidth && currentLine) {
+            lines.push(currentLine)
+            currentLine = word
+          } else {
+            currentLine = testLine
+          }
+        }
+        if (currentLine) lines.push(currentLine)
+        return lines
+      }
+
+      const checkPageBreak = (neededHeight: number) => {
+        if (cursorY - neededHeight < bottomMargin) {
+          currentPage = pdfDoc.addPage([pageWidth, pageHeight])
+          cursorY = pageHeight - margin
+        }
+      }
+
+      const itemsToProcess = elementsList.length > 0 ? elementsList : [doc.body]
+
+      for (const el of itemsToProcess) {
+        const tag = el.tagName.toLowerCase()
+        const rawText = el.textContent?.trim() || ''
+
+        if (el.classList.contains('page-break-divider') || tag === 'hr') {
+          currentPage = pdfDoc.addPage([pageWidth, pageHeight])
+          cursorY = pageHeight - margin
+          continue
+        }
+
+        if (!rawText && tag === 'p') {
+          cursorY -= 12
+          continue
+        }
+
+        let fontSize = 11
+        let font = fontRegular
+        let lineHeight = 16
+        let spacingAfter = 8
+
+        if (tag === 'h1') {
+          fontSize = 20
+          font = fontBold
+          lineHeight = 26
+          spacingAfter = 14
+        } else if (tag === 'h2') {
+          fontSize = 16
+          font = fontBold
+          lineHeight = 22
+          spacingAfter = 10
+        } else if (tag === 'h3') {
+          fontSize = 13
+          font = fontBold
+          lineHeight = 18
+          spacingAfter = 8
+        } else if (tag === 'ul' || tag === 'ol') {
+          const lis = el.querySelectorAll('li')
+          lis.forEach((li, index) => {
+            const liText = li.textContent?.trim() || ''
+            if (!liText) return
+            const bullet = tag === 'ol' ? `${index + 1}. ` : '• '
+            const lines = wrapText(liText, fontRegular, 11, contentWidth - 20)
+            checkPageBreak(lines.length * 16 + 6)
+            lines.forEach((line, idx) => {
+              currentPage.drawText(idx === 0 ? `${bullet}${line}` : `   ${line}`, {
+                x: margin + 12,
+                y: cursorY - 11,
+                size: 11,
+                font: fontRegular,
+                color: rgb(0.1, 0.1, 0.1),
+              })
+              cursorY -= 16
+            })
+            cursorY -= 4
+          })
+          cursorY -= 6
+          continue
+        } else {
+          const isBold = el.querySelector('strong, b') !== null || (el as HTMLElement).style.fontWeight === 'bold'
+          const isItalic = el.querySelector('em, i') !== null || (el as HTMLElement).style.fontStyle === 'italic'
+          font = isBold ? fontBold : isItalic ? fontItalic : fontRegular
+        }
+
+        const lines = wrapText(rawText, font, fontSize, contentWidth)
+        checkPageBreak(lines.length * lineHeight + spacingAfter)
+
+        for (const line of lines) {
+          currentPage.drawText(line, {
+            x: margin,
+            y: cursorY - fontSize,
+            size: fontSize,
+            font,
+            color: rgb(0.1, 0.1, 0.1),
+          })
+          cursorY -= lineHeight
+        }
+        cursorY -= spacingAfter
+      }
+
+      const bytes = await pdfDoc.save()
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${file?.name?.replace(/\.[^/.]+$/, '') || 'document'}-word-edited.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      toast.show('Word-edited document exported as PDF!', 'success')
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not export to PDF.', 'error')
+    }
+  }
+
+  // Solution A: Export Word Document to Native Word (.docx) via docx
+  const exportWordToDocx = async () => {
+    const editorEl = wordEditorRef.current
+    if (!editorEl) return
+    const currentHtml = editorEl.innerHTML
+
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(currentHtml, 'text/html')
+      const paragraphs: Paragraph[] = []
+      const elementsList = Array.from(doc.body.children)
+      const items = elementsList.length > 0 ? elementsList : [doc.body]
+
+      for (const el of items) {
+        const tag = el.tagName.toLowerCase()
+        const text = el.textContent || ''
+        if (!text.trim() && tag === 'p') continue
+
+        if (tag === 'h1') {
+          paragraphs.push(
+            new Paragraph({
+              heading: HeadingLevel.HEADING_1,
+              children: [new TextRun({ text: text.trim(), bold: true, size: 36 })],
+              spacing: { before: 240, after: 120 },
+            })
+          )
+        } else if (tag === 'h2') {
+          paragraphs.push(
+            new Paragraph({
+              heading: HeadingLevel.HEADING_2,
+              children: [new TextRun({ text: text.trim(), bold: true, size: 28 })],
+              spacing: { before: 200, after: 100 },
+            })
+          )
+        } else if (tag === 'h3') {
+          paragraphs.push(
+            new Paragraph({
+              heading: HeadingLevel.HEADING_3,
+              children: [new TextRun({ text: text.trim(), bold: true, size: 24 })],
+              spacing: { before: 160, after: 80 },
+            })
+          )
+        } else if (tag === 'ul' || tag === 'ol') {
+          const lis = el.querySelectorAll('li')
+          lis.forEach((li) => {
+            paragraphs.push(
+              new Paragraph({
+                bullet: { level: 0 },
+                children: [new TextRun({ text: li.textContent || '', size: 22 })],
+                spacing: { before: 40, after: 40 },
+              })
+            )
+          })
+        } else {
+          const runs: TextRun[] = []
+          if (el.childNodes.length > 0) {
+            el.childNodes.forEach((node) => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                if (node.textContent) runs.push(new TextRun({ text: node.textContent, size: 22 }))
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const childEl = node as HTMLElement
+                const childTag = childEl.tagName.toLowerCase()
+                const isBold = childTag === 'strong' || childTag === 'b' || childEl.style.fontWeight === 'bold'
+                const isItalic = childTag === 'em' || childTag === 'i' || childEl.style.fontStyle === 'italic'
+                const isUnderline = childTag === 'u' || childEl.style.textDecoration?.includes('underline')
+                runs.push(
+                  new TextRun({
+                    text: childEl.textContent || '',
+                    bold: isBold,
+                    italics: isItalic,
+                    underline: isUnderline ? {} : undefined,
+                    size: 22,
+                  })
+                )
+              }
+            })
+          } else {
+            runs.push(new TextRun({ text, size: 22 }))
+          }
+
+          paragraphs.push(
+            new Paragraph({
+              children: runs.length > 0 ? runs : [new TextRun({ text, size: 22 })],
+              spacing: { before: 60, after: 100 },
+            })
+          )
+        }
+      }
+
+      if (paragraphs.length === 0) {
+        paragraphs.push(new Paragraph({ children: [new TextRun({ text: 'Edited Document', size: 22 })] }))
+      }
+
+      const docxDoc = new Document({
+        sections: [{ properties: {}, children: paragraphs }],
+      })
+
+      const blob = await Packer.toBlob(docxDoc)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${file?.name?.replace(/\.[^/.]+$/, '') || 'document'}-edited.docx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      toast.show('Word document (.docx) exported successfully!', 'success')
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not export to Word DOCX.', 'error')
+    }
+  }
+
   const selectedElement = elements.find((item) => item.id === selectedId)
   const visibleElements = elements.filter((item) => item.page === activePage)
 
   return (
     <div className="editor-page">
+      {/* Top Header & Mode Switcher */}
       <header className="editor-toolbar">
-        <Link to="/tools" className="back-link" style={{ margin: 0 }}>
-          ← Back to Tools
-        </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <EditorIcon size={20} color="#ffd21a" />
-          <strong>PDF Studio Editor</strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <Link to="/tools" className="back-link" style={{ margin: 0 }}>
+            ← Back to Tools
+          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <EditorIcon size={20} color="#ffd21a" />
+            <strong style={{ letterSpacing: '-0.02em', fontSize: '15px' }}>PDF Studio Workspace</strong>
+          </div>
         </div>
 
-        {file && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '20px' }}>
-            <button
-              type="button"
-              className={`button ${toolMode === 'text' ? 'button-primary' : 'button-ghost'}`}
-              style={{ minHeight: '36px', padding: '0 14px', fontSize: '11px' }}
-              onClick={() => setToolMode('text')}
-            >
-              <span>+ Add / Edit Text</span>
-            </button>
-            <button
-              type="button"
-              className={`button ${toolMode === 'whiteout' ? 'button-primary' : 'button-ghost'}`}
-              style={{ minHeight: '36px', padding: '0 14px', fontSize: '11px' }}
-              onClick={() => setToolMode('whiteout')}
-            >
-              <span>⬜ Whiteout / Erase</span>
-            </button>
-            <button
-              type="button"
-              className={`button ${toolMode === 'select' ? 'button-primary' : 'button-ghost'}`}
-              style={{ minHeight: '36px', padding: '0 14px', fontSize: '11px' }}
-              onClick={() => setToolMode('select')}
-            >
-              <span>✋ Select & Move</span>
-            </button>
-          </div>
-        )}
+        {/* Studio Mode Selector (Solution A vs Solution B) */}
+        <div className="studio-mode-toggle" role="tablist" aria-label="Editor Modes">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeMode === 'word'}
+            className={`mode-btn ${activeMode === 'word' ? 'active' : ''}`}
+            onClick={() => setActiveMode('word')}
+          >
+            <WordIcon size={15} />
+            <span>Word Document Mode (Reflow & Edit)</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeMode === 'canvas'}
+            className={`mode-btn ${activeMode === 'canvas' ? 'active' : ''}`}
+            onClick={() => setActiveMode('canvas')}
+          >
+            <EditorIcon size={15} />
+            <span>Direct PDF Click & Edit Mode</span>
+          </button>
+        </div>
 
+        {/* Global Export & Zoom Actions */}
         <div className="editor-toolbar-actions">
-          <button
-            type="button"
-            className="icon-btn"
-            disabled={!file}
-            onClick={() => setZoom((z) => Math.max(50, z - 15))}
-            aria-label="Zoom out"
-          >
-            <ZoomOutIcon size={18} />
-          </button>
-          <span>{zoom}%</span>
-          <button
-            type="button"
-            className="icon-btn"
-            disabled={!file}
-            onClick={() => setZoom((z) => Math.min(200, z + 15))}
-            aria-label="Zoom in"
-          >
-            <ZoomInIcon size={18} />
-          </button>
-          {file && pageCount > 1 && (
-            <button
-              type="button"
-              className="button button-ghost"
-              style={{ minHeight: '36px', padding: '0 12px', fontSize: '11px', color: '#fb7185', borderColor: 'rgba(251,113,133,0.3)' }}
-              onClick={() => void deletePage(activePage)}
-              title={`Delete Page ${activePage + 1}`}
-            >
-              <TrashIcon size={14} />
-              <span>Delete Page {activePage + 1}</span>
-            </button>
+          {activeMode === 'canvas' ? (
+            <>
+              <button
+                type="button"
+                className="icon-btn"
+                disabled={!file}
+                onClick={() => setZoom((z) => Math.max(50, z - 15))}
+                aria-label="Zoom out"
+              >
+                <ZoomOutIcon size={18} />
+              </button>
+              <span>{zoom}%</span>
+              <button
+                type="button"
+                className="icon-btn"
+                disabled={!file}
+                onClick={() => setZoom((z) => Math.min(200, z + 15))}
+                aria-label="Zoom in"
+              >
+                <ZoomInIcon size={18} />
+              </button>
+              {file && pageCount > 1 && (
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  style={{ minHeight: '36px', padding: '0 12px', fontSize: '11px', color: '#fb7185', borderColor: 'rgba(251,113,133,0.3)' }}
+                  onClick={() => void deletePage(activePage)}
+                  title={`Delete Page ${activePage + 1}`}
+                >
+                  <TrashIcon size={14} />
+                  <span>Delete Page {activePage + 1}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={!file}
+                onClick={() => void exportCanvasPdf()}
+              >
+                <DownloadIcon size={16} />
+                <span>Export PDF</span>
+              </button>
+            </>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={!file}
+                onClick={() => void exportWordToDocx()}
+              >
+                <WordIcon size={16} color="#ffd21a" />
+                <span>Export Word (.docx)</span>
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={!file}
+                onClick={() => void exportWordToPdf()}
+              >
+                <DownloadIcon size={16} />
+                <span>Export PDF</span>
+              </button>
+            </div>
           )}
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={!file}
-            onClick={() => void exportPdf()}
-          >
-            <DownloadIcon size={16} />
-            <span>Export PDF</span>
-          </button>
         </div>
       </header>
 
       {!file ? (
         <div className="editor-empty">
           <p className="eyebrow">BROWSER-ACCELERATED STUDIO</p>
-          <h1>Interactive PDF Canvas Editor</h1>
-          <p>
-            Add text, whiteout/erase existing content, annotate, and replace text directly on high-resolution vector PDF pages with 100% on-device privacy.
+          <h1>
+            {activeMode === 'word'
+              ? 'Word-Style PDF Document Editor'
+              : 'Direct In-Place PDF Canvas Editor'}
+          </h1>
+          <p style={{ maxWidth: '640px', margin: '0 auto 28px' }}>
+            {activeMode === 'word'
+              ? 'Edit document text with full word reflow, paragraph headings, formatting toolbar, and type/backspace just like Microsoft Word. Download as PDF or Word DOCX with 100% on-device privacy.'
+              : 'Click directly on any existing text in your PDF to edit it in place, wipe old text cleanly, add annotations, or stamp signatures with zero server uploads.'}
           </p>
-          <FileUploader accept="application/pdf,.pdf" files={files} onFiles={setFiles} />
+          <FileUploader accept="application/pdf,.pdf,.docx" files={files} onFiles={setFiles} />
+        </div>
+      ) : activeMode === 'word' ? (
+        /* =========================================================================
+           SOLUTION A: FULL WORD PROCESSOR / DOCUMENT REFLOW EDITOR
+           ========================================================================= */
+        <div className="word-editor-shell">
+          {/* Word Formatting Ribbon Toolbar */}
+          <div className="word-toolbar">
+            <div className="word-toolbar-group">
+              <select
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val.startsWith('h')) applyFormat('formatBlock', `<${val}>`)
+                  else if (val === 'p') applyFormat('formatBlock', '<p>')
+                  else if (val === 'ul') applyFormat('insertUnorderedList')
+                  else if (val === 'ol') applyFormat('insertOrderedList')
+                }}
+                className="word-select"
+                title="Style"
+              >
+                <option value="p">Normal Text</option>
+                <option value="h1">Heading 1</option>
+                <option value="h2">Heading 2</option>
+                <option value="h3">Heading 3</option>
+                <option value="ul">Bulleted List</option>
+                <option value="ol">Numbered List</option>
+              </select>
+
+              <select
+                onChange={(e) => applyFormat('fontName', e.target.value)}
+                className="word-select"
+                title="Font Family"
+              >
+                <option value="Inter, sans-serif">Sans-Serif (Modern)</option>
+                <option value="Georgia, serif">Serif (Editorial)</option>
+                <option value="'Courier New', monospace">Monospace (Code)</option>
+              </select>
+
+              <select
+                onChange={(e) => applyFormat('fontSize', e.target.value)}
+                className="word-select"
+                title="Font Size"
+              >
+                <option value="3">12 pt (Normal)</option>
+                <option value="4">14 pt (Medium)</option>
+                <option value="5">18 pt (Large)</option>
+                <option value="6">24 pt (X-Large)</option>
+                <option value="7">36 pt (Title)</option>
+              </select>
+            </div>
+
+            <div className="word-toolbar-divider" />
+
+            <div className="word-toolbar-group">
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('bold')}
+                title="Bold (Ctrl+B)"
+              >
+                <strong>B</strong>
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('italic')}
+                title="Italic (Ctrl+I)"
+              >
+                <em>I</em>
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('underline')}
+                title="Underline (Ctrl+U)"
+              >
+                <u>U</u>
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('strikeThrough')}
+                title="Strikethrough"
+              >
+                <s>S</s>
+              </button>
+            </div>
+
+            <div className="word-toolbar-divider" />
+
+            <div className="word-toolbar-group">
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('justifyLeft')}
+                title="Align Left"
+              >
+                ≡
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('justifyCenter')}
+                title="Align Center"
+              >
+                ⫸⫷
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('justifyRight')}
+                title="Align Right"
+              >
+                ⫸
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('insertUnorderedList')}
+                title="Bullet List"
+              >
+                • List
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('insertOrderedList')}
+                title="Numbered List"
+              >
+                1. List
+              </button>
+            </div>
+
+            <div className="word-toolbar-divider" />
+
+            <div className="word-toolbar-group">
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('foreColor', '#ffd21a')}
+                title="Gold Text"
+                style={{ color: '#ffd21a' }}
+              >
+                A
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('foreColor', '#000000')}
+                title="Black Text"
+                style={{ color: '#000000', background: '#e5e5e5' }}
+              >
+                A
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('hiliteColor', '#fef08a')}
+                title="Highlight Yellow"
+                style={{ background: '#fef08a', color: '#000000' }}
+              >
+                🖍
+              </button>
+              <button
+                type="button"
+                className="word-tool-btn"
+                onClick={() => applyFormat('removeFormat')}
+                title="Clear Formatting"
+              >
+                🧹
+              </button>
+            </div>
+          </div>
+
+          {/* Word Canvas Page Sheet */}
+          <div className="word-canvas-wrapper">
+            <div className="word-paper-sheet">
+              {isExtractingWord ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#ffd21a' }}>
+                  <p>Extracting flowing document paragraphs on-device…</p>
+                </div>
+              ) : (
+                <div
+                  ref={wordEditorRef}
+                  className="word-editable-content"
+                  contentEditable
+                  suppressContentEditableWarning
+                  dangerouslySetInnerHTML={{ __html: wordHtml }}
+                  onBlur={(e) => setWordHtml(e.currentTarget.innerHTML)}
+                  spellCheck
+                  aria-label="Word document editable body"
+                />
+              )}
+            </div>
+          </div>
         </div>
       ) : (
+        /* =========================================================================
+           SOLUTION B: IN-PLACE DIRECT PDF CANVAS CLICK & EDIT
+           ========================================================================= */
         <div className="editor-layout">
           {/* Page Thumbnail Sidebar */}
           <aside className="thumbnail-sidebar">
@@ -503,7 +1160,7 @@ export function PDFEditorPage() {
                       justifyContent: 'center',
                       cursor: 'pointer',
                       padding: 0,
-                      zIndex: 2
+                      zIndex: 2,
                     }}
                   >
                     <TrashIcon size={12} />
@@ -515,6 +1172,38 @@ export function PDFEditorPage() {
 
           {/* Interactive Document Stage */}
           <section className="editor-canvas-wrap">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', maxWidth: '820px', margin: '0 auto 14px' }}>
+              <div className="pill-badge" style={{ margin: 0, fontSize: '11px' }}>
+                <span>💡 Click any existing text in the PDF to edit it in-place</span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className={`button ${toolMode === 'text' ? 'button-primary' : 'button-ghost'}`}
+                  style={{ minHeight: '32px', padding: '0 12px', fontSize: '11px' }}
+                  onClick={() => setToolMode('text')}
+                >
+                  <span>+ Add Text</span>
+                </button>
+                <button
+                  type="button"
+                  className={`button ${toolMode === 'whiteout' ? 'button-primary' : 'button-ghost'}`}
+                  style={{ minHeight: '32px', padding: '0 12px', fontSize: '11px' }}
+                  onClick={() => setToolMode('whiteout')}
+                >
+                  <span>⬜ Whiteout</span>
+                </button>
+                <button
+                  type="button"
+                  className={`button ${toolMode === 'select' ? 'button-primary' : 'button-ghost'}`}
+                  style={{ minHeight: '32px', padding: '0 12px', fontSize: '11px' }}
+                  onClick={() => setToolMode('select')}
+                >
+                  <span>✋ Select</span>
+                </button>
+              </div>
+            </div>
+
             <div
               className="canvas-stage"
               ref={stageRef}
@@ -560,6 +1249,38 @@ export function PDFEditorPage() {
                 </div>
               )}
 
+              {/* Solution B: In-Place Text Detection Layer */}
+              <div className="pdf-detected-text-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}>
+                {detectedSnippets.map((snippet) => {
+                  const isHovered = hoveredSnippetId === snippet.id
+                  return (
+                    <div
+                      key={snippet.id}
+                      className={`pdf-text-snippet ${isHovered ? 'hovered' : ''}`}
+                      style={{
+                        position: 'absolute',
+                        left: `${snippet.x}%`,
+                        top: `${snippet.y}%`,
+                        width: `${snippet.width}%`,
+                        height: `${snippet.height}%`,
+                        border: isHovered ? '1px dashed #ffd21a' : '1px solid transparent',
+                        background: isHovered ? 'rgba(255, 210, 26, 0.15)' : 'transparent',
+                        cursor: 'text',
+                        borderRadius: '2px',
+                        zIndex: 3,
+                      }}
+                      title={`Click to edit: "${snippet.str}"`}
+                      onMouseEnter={() => setHoveredSnippetId(snippet.id)}
+                      onMouseLeave={() => setHoveredSnippetId(null)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleEditExistingSnippet(snippet)
+                      }}
+                    />
+                  )
+                })}
+              </div>
+
               {/* Interactive Overlays Layer */}
               <div className="canvas-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}>
                 {visibleElements.map((element) => {
@@ -592,7 +1313,7 @@ export function PDFEditorPage() {
                         boxShadow: isSelected ? '0 0 10px rgba(255, 210, 26, 0.5)' : 'none',
                         cursor: 'move',
                         userSelect: 'none',
-                        zIndex: isSelected ? 10 : 2,
+                        zIndex: isSelected ? 10 : 4,
                         borderRadius: '2px',
                         whiteSpace: 'pre',
                       }}
@@ -643,8 +1364,8 @@ export function PDFEditorPage() {
 
           {/* Properties & Tool Inspector */}
           <aside className="properties-panel">
-            <p className="eyebrow">STUDIO CONTROLS</p>
-            <h2>{selectedElement ? 'Edit Selected Item' : 'Add Content'}</h2>
+            <p className="eyebrow">DIRECT EDIT CONTROLS</p>
+            <h2>{selectedElement ? 'Edit Text Item' : 'Add Content'}</h2>
 
             {selectedElement ? (
               <div style={{ display: 'grid', gap: '14px' }}>
@@ -726,70 +1447,62 @@ export function PDFEditorPage() {
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <button
                     type="button"
-                    className="button button-danger"
-                    style={{ flex: 1, minHeight: '36px' }}
+                    className="button button-ghost"
                     onClick={() => removeSelected()}
+                    style={{ color: '#fb7185', borderColor: 'rgba(251,113,133,0.3)', flex: 1 }}
                   >
                     <TrashIcon size={14} />
                     <span>Delete Item</span>
                   </button>
                   <button
                     type="button"
-                    className="button button-ghost"
-                    style={{ minHeight: '36px' }}
+                    className="button button-primary"
                     onClick={() => setSelectedId(null)}
+                    style={{ flex: 1 }}
                   >
-                    Done
+                    <CheckIcon size={14} />
+                    <span>Done</span>
                   </button>
                 </div>
               </div>
             ) : (
               <div style={{ display: 'grid', gap: '16px' }}>
-                <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255, 210, 26, 0.05)', border: '1px solid rgba(255, 210, 26, 0.2)' }}>
-                  <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '4px', fontSize: '13px' }}>
-                    💡 How to Edit Text:
-                  </strong>
-                  <p style={{ margin: 0, fontSize: '12px', color: '#a3a3a3', lineHeight: 1.5 }}>
-                    1. Select <strong>+ Add / Edit Text</strong> or <strong>⬜ Whiteout</strong> mode above.<br />
-                    2. Click anywhere on the document to place text or cover existing text.<br />
-                    3. Drag items directly on the document to position them.
-                  </p>
-                </div>
+                <p style={{ color: '#a3a3a3', fontSize: '13px', lineHeight: 1.6 }}>
+                  Click directly on any word or sentence in the PDF canvas to edit it in place. Or configure new text below to stamp onto the document:
+                </p>
 
                 <label>
-                  Default Text for Next Click
+                  Default Stamp Text
                   <input
                     value={draftText}
                     onChange={(e) => setDraftText(e.target.value)}
-                    placeholder="Enter text to place"
+                    placeholder="e.g. Approved, Paid, Note"
                   />
                 </label>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <label>
-                    Size ({draftSize}px)
-                    <input
-                      type="range"
-                      min="8"
-                      max="72"
-                      value={draftSize}
-                      onChange={(e) => setDraftSize(Number(e.target.value))}
-                    />
-                  </label>
+                <label>
+                  Font Size ({draftSize}px)
+                  <input
+                    type="range"
+                    min="10"
+                    max="48"
+                    value={draftSize}
+                    onChange={(e) => setDraftSize(Number(e.target.value))}
+                  />
+                </label>
 
-                  <label>
-                    Font
-                    <select
-                      value={draftFont}
-                      onChange={(e) => setDraftFont(e.target.value as typeof draftFont)}
-                    >
-                      <option value="Helvetica">Helvetica</option>
-                      <option value="HelveticaBold">Helvetica Bold</option>
-                      <option value="Times">Times New Roman</option>
-                      <option value="Courier">Courier</option>
-                    </select>
-                  </label>
-                </div>
+                <label>
+                  Font Family
+                  <select
+                    value={draftFont}
+                    onChange={(e) => setDraftFont(e.target.value as EditorElement['fontFamily'])}
+                  >
+                    <option value="Helvetica">Helvetica</option>
+                    <option value="HelveticaBold">Helvetica Bold</option>
+                    <option value="Times">Times New Roman</option>
+                    <option value="Courier">Courier</option>
+                  </select>
+                </label>
 
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px' }}>Text Color</label>
@@ -801,8 +1514,8 @@ export function PDFEditorPage() {
                         title={c.label}
                         onClick={() => setDraftColor(c.value)}
                         style={{
-                          width: '26px',
-                          height: '26px',
+                          width: '24px',
+                          height: '24px',
                           borderRadius: '50%',
                           background: c.value,
                           border: draftColor === c.value ? '2px solid #ffd21a' : '1px solid #555',
@@ -813,67 +1526,11 @@ export function PDFEditorPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px' }}>Background Style</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
-                    {BG_PRESETS.map((bg) => (
-                      <button
-                        type="button"
-                        key={bg.value}
-                        onClick={() => setDraftBg(bg.value)}
-                        className={`button ${draftBg === bg.value ? 'button-primary' : 'button-ghost'}`}
-                        style={{ minHeight: '32px', padding: '0 8px', fontSize: '10px' }}
-                      >
-                        {bg.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="pill-badge" style={{ margin: '10px 0 0', fontSize: '11px', width: '100%', justifyContent: 'center' }}>
+                  <span>✓ 100% On-Device Client Processing</span>
                 </div>
               </div>
             )}
-
-            {/* Overlays on active page */}
-            <div className="element-list">
-              <h3>Items on Page {activePage + 1} ({visibleElements.length})</h3>
-              {visibleElements.length ? (
-                visibleElements.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedId(item.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      background: item.id === selectedId ? 'rgba(255, 210, 26, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                      border: item.id === selectedId ? '1px solid #ffd21a' : '1px solid rgba(255, 255, 255, 0.08)',
-                      marginBottom: '8px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', maxWidth: '180px' }}>
-                      <strong style={{ color: item.color }}>
-                        {item.type === 'whiteout' ? '⬜ Whiteout' : item.text || 'Empty Text'}
-                      </strong>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        removeSelected(item.id)
-                      }}
-                      style={{ background: 'none', border: 'none', color: '#fb7185', cursor: 'pointer', padding: '2px' }}
-                      aria-label="Delete"
-                    >
-                      <TrashIcon size={13} />
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <p className="privacy-note">No items added on this page yet.</p>
-              )}
-            </div>
           </aside>
         </div>
       )}

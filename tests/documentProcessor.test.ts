@@ -190,6 +190,27 @@ describe('Document Processor & Validation Suite', () => {
       expect(signed.blob.size).toBeGreaterThan(0)
     })
 
+    it('encrypts and password protects a PDF document on-device', async () => {
+      const file = await createSamplePdf(2)
+      const protectedPdf = await browserDocumentProcessor.protect(file, 'StrongSecret123!')
+      expect(protectedPdf.blob.size).toBeGreaterThan(0)
+      expect(protectedPdf.fileName).toContain('protected')
+      expect(protectedPdf.mimeType).toBe('application/pdf')
+
+      // Verifying unlock recovers the document
+      const encryptedFile = new File([protectedPdf.blob], 'protected.pdf', { type: 'application/pdf' })
+      const unlocked = await browserDocumentProcessor.unlock(encryptedFile, 'StrongSecret123!')
+      expect(unlocked.blob.size).toBeGreaterThan(0)
+      expect(unlocked.fileName).toContain('unlocked')
+    })
+
+    it('throws error when protecting with empty password', async () => {
+      const file = await createSamplePdf(2)
+      await expect(browserDocumentProcessor.protect(file, '   ')).rejects.toThrow(
+        'Enter a password to protect this document.'
+      )
+    })
+
     it('handles malformed / corrupt PDF gracefully', async () => {
       const badFile = new File(['NOT_A_REAL_PDF_DATA_STREAM'], 'corrupt.pdf', { type: 'application/pdf' })
       await expect(browserDocumentProcessor.inspect(badFile)).rejects.toThrow()

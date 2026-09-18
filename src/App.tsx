@@ -7,6 +7,8 @@ import { findTool, tools } from './config/tools'
 import { ToolRunner } from './components/tools/ToolRunner'
 import { PDFEditorPage } from './pages/PDFEditorPage'
 import { useToast } from './components/common/Toast'
+import { historyService, type DocumentHistoryEntry } from './services/historyService'
+import { formatBytes } from './components/upload/FileUploader'
 import {
   ToolIconRenderer,
   ArrowRightIcon,
@@ -20,7 +22,8 @@ import {
   LayersIcon,
   CloseIcon,
   HelpIcon,
-  EditorIcon
+  EditorIcon,
+  TrashIcon
 } from './components/common/Icons'
 
 const categories = ['All', 'Organize', 'Create', 'Edit', 'Convert', 'Secure'] as const
@@ -300,11 +303,7 @@ export default function App() {
         element={
           <Protected>
             <WorkspaceShell>
-              <EmptyWorkspacePage
-                title="My Cloud Files"
-                copy="Your saved documents will appear here once Firebase Storage is connected and you choose to sync completed work."
-                action="Explore Tools"
-              />
+              <FilesPage />
             </WorkspaceShell>
           </Protected>
         }
@@ -314,11 +313,7 @@ export default function App() {
         element={
           <Protected>
             <WorkspaceShell>
-              <EmptyWorkspacePage
-                title="Processing Audit Trail"
-                copy="Completed document operations can be logged here locally without persisting sensitive file content."
-                action="Process Document"
-              />
+              <HistoryPage />
             </WorkspaceShell>
           </Protected>
         }
@@ -473,7 +468,7 @@ function HomePage() {
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" to="/tools">
-              <span>Explore All 18 Tools</span>
+              <span>Explore All 19 Tools</span>
               <ArrowRightIcon size={16} />
             </Link>
             <Link className="button button-ghost" to="/tools/pdf-editor">
@@ -502,7 +497,7 @@ function HomePage() {
             <CpuIcon size={26} />
           </div>
           <div className="metric-info">
-            <b>17</b>
+            <b>19</b>
             <span>Browser-Accelerated Tools</span>
           </div>
         </div>
@@ -669,8 +664,8 @@ function ToolsPage() {
   return (
     <section className="page-section tools-page">
       <PageMeta
-        title="All 18 PDF & Document Tools — KnowTheFile"
-        description="Browse the complete directory of 18 private, browser-accelerated PDF tools. Merge, split, compress, edit, sign, convert, and protect documents."
+        title="All 19 PDF & Document Tools — KnowTheFile"
+        description="Browse the complete directory of 19 private, browser-accelerated PDF tools. Merge, split, compress, edit, sign, convert, and protect documents."
         canonicalPath="/tools"
         keywords="pdf tools directory, all pdf tools, merge pdf, split pdf, compress pdf, convert docx to pdf, image to pdf, pdf editor"
       />
@@ -689,7 +684,7 @@ function ToolsPage() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search across all 18 tools (e.g. merge, compress, watermark)…"
+            placeholder="Search across all 19 tools (e.g. merge, compress, watermark)…"
             aria-label="Search tools"
           />
           {query && (
@@ -771,25 +766,26 @@ function ToolsPage() {
 
 function ToolPage() {
   const { toolId } = useParamsTyped()
-  if (toolId === 'pdf-editor') {
+  if (toolId === 'pdf-editor' || toolId === 'pdf-word-editor') {
+    const isWord = toolId === 'pdf-word-editor'
     return (
       <>
         <PageMeta
-          title="Free Online PDF Editor — Annotate, Add Text & Canvas Studio"
-          description="Edit PDF files directly in your browser. Add text notes, overlays, and annotations privately without server uploads."
-          canonicalPath="/tools/pdf-editor"
-          keywords="online pdf editor, edit pdf free, annotate pdf, add text to pdf, private pdf editor"
+          title={isWord ? "Word-Style PDF Editor — Flow, Edit & Reflow Documents" : "Free Online PDF Editor — In-Place Text Editing & Canvas Studio"}
+          description={isWord ? "Edit PDF text like Microsoft Word with flowing paragraphs, rich typography, and instant PDF/DOCX export." : "Edit PDF files directly in your browser. Click any text to edit in-place, add notes, and annotations privately without server uploads."}
+          canonicalPath={isWord ? "/tools/pdf-word-editor" : "/tools/pdf-editor"}
+          keywords={isWord ? "word pdf editor, edit pdf like word, convert pdf to word online, flow pdf text, private word editor" : "online pdf editor, edit pdf free, annotate pdf, add text to pdf, private pdf editor"}
           schemaJson={{
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            "name": "KnowTheFile PDF Editor",
+            "name": isWord ? "KnowTheFile Word-Style PDF Editor" : "KnowTheFile PDF Editor",
             "operatingSystem": "All",
             "applicationCategory": "UtilitiesApplication",
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-            "description": "Interactive online studio to edit, annotate, and add text to PDF files directly in your browser."
+            "description": isWord ? "Flowing Word-style document editor for PDFs. Type, edit paragraphs, format typography, and export to PDF or DOCX." : "Interactive online studio to edit, annotate, and click-to-edit text on PDF files directly in your browser."
           }}
         />
-        <PDFEditorPage />
+        <PDFEditorPage defaultMode={isWord ? 'word' : 'canvas'} />
       </>
     )
   }
@@ -829,7 +825,7 @@ function PricingPage() {
     <section className="page-section pricing-page">
       <PageMeta
         title="Transparent Pricing & Architecture — KnowTheFile"
-        description="Explore KnowTheFile pricing. All 17 core on-device document tools are 100% free and client-side today."
+        description="Explore KnowTheFile pricing. All 19 core on-device document tools are 100% free and client-side today."
         canonicalPath="/pricing"
         keywords="free pdf tools, pdf editor pricing, document processing cost, knowthefile plans"
       />
@@ -845,7 +841,7 @@ function PricingPage() {
           price="₹0"
           description="Everything you need for private, unlimited on-device document operations."
           features={[
-            'All 17 browser-ready tools',
+            'All 19 browser-ready tools',
             '100% private on-device execution',
             '100 MB per-file processing limit',
             'Zero cloud tracking or retention'
@@ -1106,25 +1102,49 @@ function Protected({ children }: PropsWithChildren) {
 }
 
 function DashboardPage() {
+  const [profile, setProfile] = useState<{ name?: string; useCase?: string } | null>(null)
+  const [historyCount, setHistoryCount] = useState(0)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ktf_onboarding')
+      if (saved) setProfile(JSON.parse(saved))
+      setHistoryCount(historyService.getEntries().length)
+    } catch {
+      // ignore
+    }
+  }, [])
+
   return (
     <div className="dashboard">
       <section className="result-card" style={{ marginTop: 0 }}>
         <div>
-          <p className="eyebrow">CLOUD STORAGE SYNC</p>
-          <h2>Storage is currently in local mode</h2>
-          <p>Connect a Firebase Storage bucket to enable remote document syncing. All processed outputs are saved locally to your device.</p>
+          <p className="eyebrow">
+            {profile?.name ? `WELCOME BACK, ${profile.name.toUpperCase()}` : 'ON-DEVICE WORKSPACE'}
+          </p>
+          <h2>{profile?.useCase ? `${profile.useCase} Studio` : '100% Private Document Workspace'}</h2>
+          <p>
+            {historyCount > 0
+              ? `You have processed ${historyCount} document${historyCount === 1 ? '' : 's'} on-device with zero cloud exposure.`
+              : 'All 19 document operations run directly in your browser tab. Zero files uploaded to remote servers.'}
+          </p>
         </div>
-        <Link className="button button-ghost" to="/settings">
-          <span>Review Settings</span>
-          <ArrowRightIcon size={16} />
-        </Link>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <Link className="button button-primary" to="/history">
+            <span>Audit Trail</span>
+            <ArrowRightIcon size={16} />
+          </Link>
+          <Link className="button button-ghost" to="/files">
+            <span>Local Vault</span>
+          </Link>
+        </div>
       </section>
 
       <section className="feature-card" style={{ minHeight: 'auto' }}>
         <p className="eyebrow">QUICK ACTIONS</p>
         <h2 style={{ fontSize: '20px', marginBottom: '18px' }}>Launch Studio Tools</h2>
         <div className="mini-tool-grid">
-          {['pdf-editor', 'merge-pdf', 'compress-pdf', 'split-pdf', 'pdf-to-text', 'image-to-pdf'].map((id) => {
+          {['pdf-word-editor', 'pdf-editor', 'protect-pdf', 'merge-pdf', 'compress-pdf', 'split-pdf'].map((id) => {
             const tool = findTool(id)
             return (
               tool && (
@@ -1143,19 +1163,76 @@ function DashboardPage() {
         </div>
       </section>
 
-      <EmptyWorkspacePage
-        title="No recent cloud documents"
-        copy="When cloud saving is activated, files you explicitly choose to backup will appear here."
-        action="Start a Document Workflow"
-      />
+      {historyCount === 0 ? (
+        <EmptyWorkspacePage
+          title="No recent documents processed"
+          copy="Documents processed in any of the 19 on-device tools will automatically record here in your private audit trail."
+          action="Start a Document Workflow"
+        />
+      ) : (
+        <section className="feature-card" style={{ minHeight: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <p className="eyebrow">RECENT AUDIT TRAIL</p>
+              <h2 style={{ fontSize: '20px', margin: 0 }}>Latest Operations</h2>
+            </div>
+            <Link to="/history" className="text-button">View All ({historyCount})</Link>
+          </div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {historyService.getEntries().slice(0, 3).map((item) => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="tool-icon-disc" style={{ width: '36px', height: '36px' }}>
+                    <ToolIconRenderer name={item.toolId} size={16} />
+                  </div>
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '14px' }}>{item.outputName}</strong>
+                    <small style={{ color: '#a3a3a3', fontSize: '12px' }}>
+                      {item.toolName} · {new Date(item.timestamp).toLocaleDateString()} {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </small>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span className="availability browser" style={{ fontSize: '11px', display: 'inline-block' }}>✓ Verified On-Device</span>
+                  <small style={{ display: 'block', color: '#737373', fontSize: '11px', marginTop: '2px' }}>{formatBytes(item.outputBytes)}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
 
 function OnboardingPage() {
-  const [name, setName] = useState('')
-  const [useCase, setUseCase] = useState('Personal documents')
+  const [name, setName] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ktf_onboarding')
+      return saved ? JSON.parse(saved).name ?? '' : ''
+    } catch {
+      return ''
+    }
+  })
+  const [useCase, setUseCase] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ktf_onboarding')
+      return saved ? JSON.parse(saved).useCase ?? 'Personal documents' : 'Personal documents'
+    } catch {
+      return 'Personal documents'
+    }
+  })
   const [done, setDone] = useState(false)
+
+  const handleComplete = () => {
+    try {
+      localStorage.setItem('ktf_onboarding', JSON.stringify({ name, useCase, updatedAt: Date.now() }))
+    } catch (e) {
+      console.warn('Could not save onboarding profile:', e)
+    }
+    setDone(true)
+  }
+
   if (done) return <Navigate to="/dashboard" replace />
 
   return (
@@ -1163,7 +1240,7 @@ function OnboardingPage() {
       <p className="eyebrow">WELCOME TO KNOWTHEFILE</p>
       <h2 style={{ fontSize: '24px' }}>Customize your workspace experience.</h2>
       <p style={{ color: '#a3a3a3', margin: '12px 0 20px' }}>
-        Set up optional preferences to customize your studio dashboard.
+        Preferences are securely saved locally on this device to personalize your dashboard.
       </p>
       <div style={{ display: 'grid', gap: '16px' }}>
         <label>
@@ -1185,16 +1262,235 @@ function OnboardingPage() {
           </select>
         </label>
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginTop: '10px' }}>
-          <button type="button" className="button button-primary" onClick={() => setDone(true)}>
+          <button type="button" className="button button-primary" onClick={handleComplete}>
             <span>Continue to Dashboard</span>
             <ArrowRightIcon size={16} />
           </button>
-          <button type="button" className="text-button" onClick={() => setDone(true)}>
+          <button type="button" className="text-button" onClick={handleComplete}>
             Skip for now
           </button>
         </div>
       </div>
     </section>
+  )
+}
+
+function HistoryPage() {
+  const [entries, setEntries] = useState<DocumentHistoryEntry[]>([])
+  const [filter, setFilter] = useState('')
+  const toast = useToast()
+
+  useEffect(() => {
+    setEntries(historyService.getEntries())
+  }, [])
+
+  const handleClear = () => {
+    if (!window.confirm('Clear your entire local processing audit trail?')) return
+    historyService.clearHistory()
+    setEntries([])
+    toast.show('Audit trail cleared.', 'info')
+  }
+
+  const handleDelete = (id: string) => {
+    historyService.deleteEntry(id)
+    setEntries(historyService.getEntries())
+    toast.show('Entry removed.', 'info')
+  }
+
+  const filtered = entries.filter(
+    (e) =>
+      e.fileName.toLowerCase().includes(filter.toLowerCase()) ||
+      e.toolName.toLowerCase().includes(filter.toLowerCase()) ||
+      e.outputName.toLowerCase().includes(filter.toLowerCase())
+  )
+
+  return (
+    <div className="dashboard">
+      <section className="feature-card" style={{ minHeight: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <p className="eyebrow">CLIENT-SIDE AUDIT TRAIL</p>
+            <h1 style={{ fontSize: '24px', margin: '4px 0 8px' }}>Processing History</h1>
+            <p style={{ color: '#a3a3a3', fontSize: '13px', margin: 0 }}>
+              Logged purely inside your browser. No file contents are stored or transmitted.
+            </p>
+          </div>
+          {entries.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="button button-ghost"
+              style={{ color: '#fb7185', borderColor: 'rgba(244,63,94,0.3)', minHeight: '38px', padding: '0 16px' }}
+            >
+              <TrashIcon size={16} />
+              <span>Clear Audit Trail</span>
+            </button>
+          )}
+        </div>
+
+        {entries.length > 0 && (
+          <div style={{ marginTop: '20px' }}>
+            <div className="search-box" style={{ maxWidth: '400px', marginBottom: '16px' }}>
+              <SearchIcon size={16} />
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Search audit trail by tool or file name…"
+              />
+              {filter && (
+                <button type="button" onClick={() => setFilter('')} style={{ background: 'none', border: 'none', color: '#a3a3a3', cursor: 'pointer' }}>
+                  <CloseIcon size={14} />
+                </button>
+              )}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#a3a3a3' }}>
+                    <th style={{ padding: '12px 10px' }}>TOOL</th>
+                    <th style={{ padding: '12px 10px' }}>SOURCE FILE</th>
+                    <th style={{ padding: '12px 10px' }}>OUTPUT ARTIFACT</th>
+                    <th style={{ padding: '12px 10px' }}>OUTPUT SIZE</th>
+                    <th style={{ padding: '12px 10px' }}>TIMESTAMP</th>
+                    <th style={{ padding: '12px 10px', textAlign: 'right' }}>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td style={{ padding: '14px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <ToolIconRenderer name={item.toolId} size={18} color="#ffd21a" />
+                          <strong>{item.toolName}</strong>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 10px', color: '#d4d4d4' }}>{item.fileName}</td>
+                      <td style={{ padding: '14px 10px', color: '#ffd21a' }}>{item.outputName}</td>
+                      <td style={{ padding: '14px 10px', color: '#a3a3a3' }}>{formatBytes(item.outputBytes)}</td>
+                      <td style={{ padding: '14px 10px', color: '#737373', fontSize: '12px' }}>
+                        {new Date(item.timestamp).toLocaleDateString()} {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td style={{ padding: '14px 10px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id)}
+                          style={{ background: 'none', border: 'none', color: '#737373', cursor: 'pointer', padding: '4px' }}
+                          title="Remove entry"
+                        >
+                          <TrashIcon size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '30px', textAlign: 'center', color: '#737373' }}>
+                        No records match “{filter}”.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {entries.length === 0 && (
+          <EmptyWorkspacePage
+            title="Audit trail is currently empty"
+            copy="Every time you merge, compress, protect, edit, or transform a file using KnowTheFile, an on-device audit entry is saved here."
+            action="Explore Tools to Process Documents"
+          />
+        )}
+      </section>
+    </div>
+  )
+}
+
+function FilesPage() {
+  const [entries, setEntries] = useState<DocumentHistoryEntry[]>([])
+
+  useEffect(() => {
+    setEntries(historyService.getEntries())
+  }, [])
+
+  // Derive unique files
+  const uniqueFiles = Array.from(new Set(entries.map((e) => e.fileName))).map((fileName) => {
+    const fileEntries = entries.filter((e) => e.fileName === fileName)
+    const latest = fileEntries[0]
+    return {
+      name: fileName,
+      latestTimestamp: latest.timestamp,
+      operationsCount: fileEntries.length,
+      lastTool: latest.toolName,
+      lastToolId: latest.toolId,
+      size: latest.inputBytes,
+    }
+  })
+
+  return (
+    <div className="dashboard">
+      <section className="feature-card" style={{ minHeight: 'auto' }}>
+        <p className="eyebrow">LOCAL VAULT</p>
+        <h1 style={{ fontSize: '24px', margin: '4px 0 8px' }}>My Processed Files</h1>
+        <p style={{ color: '#a3a3a3', fontSize: '13px', margin: '0 0 24px' }}>
+          Documents you have actively transformed on this device. 100% private to this browser session.
+        </p>
+
+        {uniqueFiles.length > 0 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+            {uniqueFiles.map((file) => (
+              <div
+                key={file.name}
+                style={{
+                  padding: '18px',
+                  borderRadius: '12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                    <div className="tool-icon-disc" style={{ width: '38px', height: '38px' }}>
+                      <FolderIcon size={18} color="#ffd21a" />
+                    </div>
+                    <div style={{ overflow: 'hidden' }}>
+                      <strong style={{ display: 'block', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {file.name}
+                      </strong>
+                      <small style={{ color: '#737373', fontSize: '11px' }}>{formatBytes(file.size)}</small>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#a3a3a3', lineHeight: 1.6 }}>
+                    <div>Last used in: <span style={{ color: '#ffd21a' }}>{file.lastTool}</span></div>
+                    <div>Operations: {file.operationsCount} times</div>
+                    <div style={{ color: '#737373', fontSize: '11px' }}>{new Date(file.latestTimestamp).toLocaleDateString()}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                  <Link to={`/tools/${file.lastToolId}`} className="button button-ghost" style={{ flex: 1, justifyContent: 'center', fontSize: '12px', minHeight: '34px' }}>
+                    <span>Open Tool</span>
+                  </Link>
+                  <Link to="/tools/pdf-editor" className="button button-primary" style={{ flex: 1, justifyContent: 'center', fontSize: '12px', minHeight: '34px' }}>
+                    <span>Studio</span>
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyWorkspacePage
+            title="No local documents yet"
+            copy="When you process documents using any of KnowTheFile's 19 tools, your active document records will display here."
+            action="Launch a Document Tool"
+          />
+        )}
+      </section>
+    </div>
   )
 }
 
@@ -1282,7 +1578,7 @@ function BillingUnavailable({ title }: { title: string }) {
     <section className="empty-workspace">
       <SparklesIcon size={40} color="#ffd21a" />
       <h2>{title}</h2>
-      <p>There are no active billing charges or subscription requirements for browser-ready tools. Start using all 17 local tools for free.</p>
+      <p>There are no active billing charges or subscription requirements for browser-ready tools. Start using all 19 local tools for free.</p>
       <Link className="button button-primary" to="/pricing">
         <span>View Pricing Plans</span>
         <ArrowRightIcon size={16} />

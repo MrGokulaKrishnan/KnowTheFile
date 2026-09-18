@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import { Link } from 'react-router-dom'
 import { browserDocumentProcessor, formatPageNumbersToRange, parsePageRange, serverDocumentProcessor } from '../../services/documentProcessor'
 import { pdfToImages, pdfToText } from '../../services/pdfReadService'
+import { historyService } from '../../services/historyService'
 import type { ProcessedDocument, ToolDefinition } from '../../types'
 import { useToast } from '../common/Toast'
 import { FileUploader, formatBytes } from '../upload/FileUploader'
@@ -43,6 +44,11 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
   const [metadata, setMetadata] = useState({ title: '', author: '', subject: '', keywords: '' })
   const [signature, setSignature] = useState('Authorized Signature')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [allowPrinting, setAllowPrinting] = useState(true)
+  const [allowModifying, setAllowModifying] = useState(false)
+  const [allowCopying, setAllowCopying] = useState(true)
 
   const multiple = tool.id === 'merge-pdf' || tool.id === 'image-to-pdf'
   const imageTool = tool.id === 'image-to-pdf'
@@ -57,6 +63,8 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     setPageCount(null)
     setRange('')
     setPassword('')
+    setConfirmPassword('')
+    setShowPassword(false)
     setProgress(0)
     setProgressStage('')
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
@@ -148,7 +156,7 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
           <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#d4d4d4', lineHeight: 1.5 }}>
             Add text, whiteout/erase existing text, annotate, and re-position items directly on high-resolution PDF pages.
           </p>
-          <Link to="/editor" className="button button-primary" style={{ width: '100%', justifyContent: 'center' }}>
+          <Link to="/tools/pdf-editor" className="button button-primary" style={{ width: '100%', justifyContent: 'center' }}>
             <EditorIcon size={16} />
             <span>Launch PDF Studio Canvas</span>
           </Link>
@@ -412,15 +420,21 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     }
     if (tool.id === 'unlock-pdf') {
       return (
-        <label>
-          PDF Password (if encrypted)
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Enter document password"
-          />
-        </label>
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '12px', color: '#d4d4d4', lineHeight: 1.5 }}>
+            <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '4px' }}>🔓 Decryption & Restriction Removal</strong>
+            Removes password locks and usage permissions flags, giving you an open, unencrypted copy of your authorized document.
+          </div>
+          <label>
+            Document Passphrase (if password-locked)
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter file password (or leave blank if unrestricted)"
+            />
+          </label>
+        </div>
       )
     }
     if (tool.id === 'page-numbers') {
@@ -875,8 +889,75 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         </div>
       )
     }
+    if (tool.id === 'protect-pdf') {
+      const passwordMatch = password && confirmPassword ? password === confirmPassword : true
+      const isStrong = password.length >= 4
+      return (
+        <div style={{ display: 'grid', gap: '14px' }}>
+          <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'rgba(255,210,26,0.08)', border: '1px solid rgba(255,210,26,0.2)', fontSize: '12px', color: '#e5e5e5', lineHeight: 1.5 }}>
+            <strong style={{ color: '#ffd21a', display: 'block', marginBottom: '4px' }}>🔒 Standard AES-256 PDF Encryption</strong>
+            100% on-device client-side encryption. The file is protected with standard PDF encryption compatible with Adobe Acrobat, Chrome, Edge, and iOS.
+          </div>
+          <label>
+            Set Document Password
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password (min 4 characters)"
+                style={{ width: '100%', paddingRight: '70px' }}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', color: '#ffd21a', cursor: 'pointer', fontSize: '11px', fontWeight: 700 }}
+              >
+                {showPassword ? 'HIDE' : 'SHOW'}
+              </button>
+            </div>
+          </label>
+          <label>
+            Confirm Password
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter password to confirm"
+              autoComplete="new-password"
+            />
+          </label>
+          {!passwordMatch && (
+            <span style={{ color: '#fb7185', fontSize: '12px' }}>Passwords do not match.</span>
+          )}
+          {password && password.length < 4 && (
+            <span style={{ color: '#fb7185', fontSize: '12px' }}>Password must be at least 4 characters.</span>
+          )}
+          {password && isStrong && passwordMatch && (
+            <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Passwords match. Ready to encrypt.</span>
+          )}
+
+          <div style={{ display: 'grid', gap: '8px', marginTop: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#a3a3a3' }}>PERMISSION RESTRICTIONS</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={allowPrinting} onChange={(e) => setAllowPrinting(e.target.checked)} />
+              <span>Allow high-resolution printing</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={allowCopying} onChange={(e) => setAllowCopying(e.target.checked)} />
+              <span>Allow copying text and illustrations</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={allowModifying} onChange={(e) => setAllowModifying(e.target.checked)} />
+              <span>Allow document assembly and annotations</span>
+            </label>
+          </div>
+        </div>
+      )
+    }
     return null
-  }, [tool.id, compressLevel, splitMode, range, pageCount, angle, watermark, signature, password, position, imageFit, imageFormat, imageDpi, metadata, selectedPagesSet])
+  }, [tool.id, compressLevel, splitMode, range, pageCount, angle, watermark, signature, password, confirmPassword, showPassword, allowPrinting, allowModifying, allowCopying, position, imageFit, imageFormat, imageDpi, metadata, selectedPagesSet])
 
   const run = async () => {
     setError('')
@@ -958,6 +1039,13 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
         case 'word-to-pdf':
           processed = await browserDocumentProcessor.wordToPdf(first!)
           break
+        case 'protect-pdf':
+          processed = await browserDocumentProcessor.protect(first!, password, {
+            allowPrinting,
+            allowModifying,
+            allowCopying,
+          })
+          break
         case 'sign-pdf':
           processed = await browserDocumentProcessor.sign(first!, signature)
           break
@@ -973,6 +1061,30 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
 
       if (processed && processed.blob.size === 0) {
         throw new Error('The output file was empty, so it was discarded.')
+      }
+
+      if (processed) {
+        historyService.addEntry({
+          toolId: tool.id,
+          toolName: tool.name,
+          fileName: first?.name ?? 'document.pdf',
+          outputName: processed.fileName,
+          inputBytes: processed.inputBytes,
+          outputBytes: processed.outputBytes,
+          pageCount: processed.pageCount,
+          mimeType: processed.mimeType,
+        })
+      } else if (splitResults.length) {
+        historyService.addEntry({
+          toolId: tool.id,
+          toolName: tool.name,
+          fileName: first?.name ?? 'document.pdf',
+          outputName: `${splitResults.length} pages split`,
+          inputBytes: first?.size ?? 0,
+          outputBytes: splitResults.reduce((acc, r) => acc + r.outputBytes, 0),
+          pageCount: splitResults.length,
+          mimeType: 'application/zip',
+        })
       }
 
       setResult(processed ?? null)
@@ -1023,6 +1135,9 @@ export function ToolRunner({ tool }: { tool: ToolDefinition }) {
     }
     if (tool.id === 'split-pdf' && splitMode === 'custom') {
       if (!range.trim() || selectedPagesSet.size === 0) return false
+    }
+    if (tool.id === 'protect-pdf') {
+      if (!password.trim() || password.length < 4 || password !== confirmPassword) return false
     }
     if (tool.id === 'watermark-pdf' && !watermark.trim()) return false
     if (tool.id === 'sign-pdf' && !signature.trim()) return false

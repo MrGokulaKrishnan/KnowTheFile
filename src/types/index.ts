@@ -12,6 +12,7 @@ export type ToolId =
   | 'page-numbers'
   | 'metadata-pdf'
   | 'pdf-editor'
+  | 'pdf-word-editor'
   | 'pdf-to-image'
   | 'pdf-to-text'
   | 'pdf-to-word'

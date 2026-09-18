@@ -442,6 +442,7 @@ export function ToolIconRenderer({ name, size = 20, className = '', color }: { n
     case 'page-numbers': return <PageNumbersIcon size={size} className={className} color={color} />
     case 'metadata-pdf': return <MetadataIcon size={size} className={className} color={color} />
     case 'pdf-editor': return <EditorIcon size={size} className={className} color={color} />
+    case 'pdf-word-editor': return <WordIcon size={size} className={className} color={color} />
     case 'pdf-to-image': return <PdfToImageIcon size={size} className={className} color={color} />
     case 'pdf-to-text': return <PdfToTextIcon size={size} className={className} color={color} />
     case 'pdf-to-word': return <WordIcon size={size} className={className} color={color} />

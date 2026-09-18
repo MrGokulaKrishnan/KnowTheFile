@@ -1,4 +1,4 @@
-﻿if (typeof globalThis.DOMMatrix === 'undefined') {
+if (typeof globalThis.DOMMatrix === 'undefined') {
   class DOMMatrix {
     a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
     m11 = 1; m12 = 0; m13 = 0; m14 = 0;
@@ -72,3 +72,16 @@ if (typeof URL.createObjectURL === 'undefined') {
   URL.createObjectURL = () => 'blob:mock-url'
   URL.revokeObjectURL = () => {}
 }
+
+if (typeof globalThis.localStorage === 'undefined') {
+  const store = new Map<string, string>()
+  globalThis.localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, val: string) => store.set(key, String(val)),
+    removeItem: (key: string) => store.delete(key),
+    clear: () => store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size },
+  } as Storage
+}
+

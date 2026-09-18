@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { tools, findTool } from '../src/config/tools'
 
 describe('Tools Registry Suite', () => {
@@ -23,5 +23,11 @@ describe('Tools Registry Suite', () => {
 
     const unknown = findTool('non-existent-tool')
     expect(unknown).toBeUndefined()
+  })
+
+  it('all 18 tools are available for client-side on-device execution', () => {
+    for (const tool of tools) {
+      expect(tool.availability).toBe('browser')
+    }
   })
 })

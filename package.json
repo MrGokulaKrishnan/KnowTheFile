@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@pdfsmaller/pdf-encrypt": "^1.2.0",
     "docx": "^9.7.1",
     "firebase": "^12.18.0",
     "jszip": "^3.10.1",

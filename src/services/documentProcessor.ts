@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
 import type { PageRangeResult, ProcessedDocument } from '../types'
-import { pdfToDocx, docxToPdf } from './wordConverterService'
+import { encryptPDF } from '@pdfsmaller/pdf-encrypt'
 
 export const MAX_FILE_BYTES = 100 * 1024 * 1024
 
@@ -246,10 +246,12 @@ export const browserDocumentProcessor = {
   },
   pdfToDocx: async (file: File) => {
     assertFiles([file], 'pdf')
+    const { pdfToDocx } = await import('./wordConverterService')
     return pdfToDocx(file)
   },
   wordToPdf: async (file: File) => {
     assertFiles([file], 'word')
+    const { docxToPdf } = await import('./wordConverterService')
     return docxToPdf(file)
   },
   sign: async (file: File, signatureText: string) => {
@@ -293,6 +295,29 @@ export const browserDocumentProcessor = {
       color: rgb(0.5, 0.5, 0.5),
     })
     return output(pdf, outputName(file.name, 'signed'), file.size)
+  },
+  protect: async (file: File, password: string, options?: { allowPrinting?: boolean; allowModifying?: boolean; allowCopying?: boolean }) => {
+    assertFiles([file], 'pdf')
+    if (!password || !password.trim()) throw new Error('Enter a password to protect this document.')
+    try {
+      const bytes = await file.arrayBuffer()
+      const encryptedBytes = await encryptPDF(new Uint8Array(bytes), password.trim(), {
+        allowPrinting: options?.allowPrinting ?? true,
+        allowModifying: options?.allowModifying ?? false,
+        allowCopying: options?.allowCopying ?? true,
+      })
+      const blob = new Blob([encryptedBytes], { type: 'application/pdf' })
+      return {
+        blob,
+        fileName: outputName(file.name, 'protected'),
+        mimeType: 'application/pdf',
+        inputBytes: file.size,
+        outputBytes: blob.size,
+        pageCount: 1,
+      }
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Could not protect PDF with password.')
+    }
   },
   unlock: async (file: File, _password?: string) => {
     assertFiles([file], 'pdf')

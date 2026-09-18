@@ -6,7 +6,6 @@ import { useAuth } from './components/auth/AuthProvider'
 import { findTool, tools } from './config/tools'
 import { ToolRunner } from './components/tools/ToolRunner'
 import { PDFEditorPage } from './pages/PDFEditorPage'
-import { ReportBugModal } from './components/support/ReportBugModal'
 import { useToast } from './components/common/Toast'
 import { historyService, type DocumentHistoryEntry } from './services/historyService'
 import { formatBytes } from './components/upload/FileUploader'
@@ -22,11 +21,12 @@ import {
   FolderIcon,
   LayersIcon,
   CloseIcon,
-  HelpIcon,
   EditorIcon,
+  TrashIcon,
   BugIcon,
-  TrashIcon
+  MailIcon
 } from './components/common/Icons'
+import { SupportProvider, useSupportModal } from './components/support/SupportProvider'
 
 const categories = ['All', 'Organize', 'Create', 'Edit', 'Convert', 'Secure'] as const
 
@@ -188,8 +188,9 @@ function ScrollToTop() {
 export default function App() {
   return (
     <GlobalErrorBoundary>
-      <ScrollToTop />
-      <Routes>
+      <SupportProvider>
+        <ScrollToTop />
+        <Routes>
       <Route
         path="/"
         element={
@@ -440,6 +441,7 @@ export default function App() {
         }
       />
     </Routes>
+    </SupportProvider>
   </GlobalErrorBoundary>
   )
 }
@@ -1605,54 +1607,72 @@ function SupportRoute() {
 }
 
 function SupportPage() {
-  const [isBugModalOpen, setBugModalOpen] = useState(false)
+  const { openReportBug, openContactDeveloper } = useSupportModal()
 
   return (
-    <>
-      <section className="page-section">
-        <p className="eyebrow">TECHNICAL SUPPORT</p>
-        <h1>Get help with your documents.</h1>
-        <p className="page-lede">
-          If a browser tool runs into an issue, keep your source file on your machine and share the tool name, browser version, and error message.
-        </p>
-        <div className="feature-cards" style={{ marginTop: '40px' }}>
-          <article className="feature-card">
-            <div className="feature-icon-badge">
-              <BugIcon size={20} />
-            </div>
-            <h3 style={{ marginTop: '16px' }}>Report an Issue</h3>
-            <p>Encountered a bug or an unexpected error? Share details with our engineering team directly.</p>
-            <button type="button" className="text-button" style={{ marginTop: '16px', background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer' }} onClick={() => setBugModalOpen(true)}>
-              <span>Report a Bug</span>
-              <ArrowRightIcon size={14} />
-            </button>
-          </article>
-          <article className="feature-card">
-            <div className="feature-icon-badge">
-              <CpuIcon size={20} />
-            </div>
-            <h3 style={{ marginTop: '16px' }}>Using Browser Tools</h3>
-            <p>Learn about supported MIME types, memory limits, and WebAssembly acceleration.</p>
-            <Link to="/tools" className="text-button" style={{ marginTop: '16px' }}>
-              <span>Browse Tools</span>
-              <ArrowRightIcon size={14} />
-            </Link>
-          </article>
-          <article className="feature-card">
-            <div className="feature-icon-badge">
-              <HelpIcon size={20} />
-            </div>
-            <h3 style={{ marginTop: '16px' }}>Contact Developer</h3>
-            <p>For custom integrations or direct inquiries, contact the developer: Gokulakrishnan K.</p>
-            <a href="mailto:gokulakrishnan.k.cseacet@gmail.com?subject=Website%20Contact" className="text-button" style={{ marginTop: '16px' }}>
-              <span>Contact Developer</span>
-              <ArrowRightIcon size={14} />
-            </a>
-          </article>
+    <section className="page-section">
+      <p className="eyebrow">TECHNICAL SUPPORT & HELP</p>
+      <h1>Get help with your documents.</h1>
+      <p className="page-lede">
+        Have an issue, unexpected error, or suggestion? Submit a technical bug report or reach out directly to developer Gokulakrishnan K.
+      </p>
+
+      {/* Primary Support Action Banner */}
+      <div className="support-banner-card" style={{ marginTop: '32px' }}>
+        <div>
+          <h2 style={{ fontSize: '20px', margin: '0 0 8px', color: '#ffffff' }}>Facing an issue or bug?</h2>
+          <p style={{ margin: 0, color: '#a3a3a3', fontSize: '14px' }}>
+            Report bugs directly with auto-captured browser telemetry so we can fix it immediately.
+          </p>
         </div>
-      </section>
-      <ReportBugModal isOpen={isBugModalOpen} onClose={() => setBugModalOpen(false)} />
-    </>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button type="button" className="button button-primary" onClick={openReportBug}>
+            <BugIcon size={16} />
+            <span>Report a Bug</span>
+          </button>
+          <button type="button" className="button button-ghost" onClick={openContactDeveloper}>
+            <MailIcon size={16} />
+            <span>Contact Developer</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="feature-cards" style={{ marginTop: '40px' }}>
+        <article className="feature-card">
+          <div className="feature-icon-badge" style={{ background: 'rgba(255,210,26,0.12)', color: '#ffd21a' }}>
+            <BugIcon size={20} />
+          </div>
+          <h3 style={{ marginTop: '16px' }}>Report Bug</h3>
+          <p>Submit structured bug reports with category, priority, steps to reproduce, and environment details.</p>
+          <button type="button" className="text-button" onClick={openReportBug} style={{ marginTop: '16px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <span style={{ color: '#ffd21a', fontWeight: 600 }}>Open Bug Reporter</span>
+            <ArrowRightIcon size={14} color="#ffd21a" />
+          </button>
+        </article>
+        <article className="feature-card">
+          <div className="feature-icon-badge" style={{ background: 'rgba(255,210,26,0.12)', color: '#ffd21a' }}>
+            <MailIcon size={20} />
+          </div>
+          <h3 style={{ marginTop: '16px' }}>Contact Developer</h3>
+          <p>Direct contact line to Gokulakrishnan K (gokulakrishnan.k.cseacet@gmail.com) for feedback or questions.</p>
+          <button type="button" className="text-button" onClick={openContactDeveloper} style={{ marginTop: '16px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <span style={{ color: '#ffd21a', fontWeight: 600 }}>Email Gokulakrishnan</span>
+            <ArrowRightIcon size={14} color="#ffd21a" />
+          </button>
+        </article>
+        <article className="feature-card">
+          <div className="feature-icon-badge">
+            <CpuIcon size={20} />
+          </div>
+          <h3 style={{ marginTop: '16px' }}>Using Browser Tools</h3>
+          <p>Learn about supported MIME types, 100 MB memory limits, and WebAssembly processing engines.</p>
+          <Link to="/tools" className="text-button" style={{ marginTop: '16px' }}>
+            <span>Browse All Tools</span>
+            <ArrowRightIcon size={14} />
+          </Link>
+        </article>
+      </div>
+    </section>
   )
 }
 

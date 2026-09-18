@@ -14,9 +14,11 @@ import {
   ArrowRightIcon,
   ShieldCheckIcon,
   CpuIcon,
-  SparklesIcon
+  SparklesIcon,
+  BugIcon,
+  MailIcon
 } from '../common/Icons'
-import { ReportBugModal } from '../support/ReportBugModal'
+import { useSupportModal } from '../support/SupportProvider'
 
 const publicNav = [
   { to: '/tools', label: 'All Tools' },
@@ -135,66 +137,60 @@ export function WorkspaceShell({ children }: PropsWithChildren) {
 }
 
 function Footer() {
-  const [isBugModalOpen, setBugModalOpen] = useState(false)
+  const { openReportBug, openContactDeveloper } = useSupportModal()
 
   return (
-    <>
-      <footer className="site-footer">
+    <footer className="site-footer">
+      <div>
+        <Brand />
+        <p>
+          Private-by-design document workstation. Process, convert, and edit documents with 100% on-device browser acceleration.
+        </p>
+        <div className="trust-row" style={{ marginTop: '16px' }}>
+          <span className="trust-item"><ShieldCheckIcon size={16} /> Zero Cloud Uploads</span>
+          <span className="trust-item"><CpuIcon size={16} /> Client-Side Engine</span>
+        </div>
+        <div className="developer-contact-pill" style={{ marginTop: '16px' }}>
+          <small style={{ color: '#737373', fontSize: '11px', display: 'block', marginBottom: '2px' }}>DEVELOPER CONTACT</small>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: '#f5f5f7' }}>
+            Gokulakrishnan K &bull; <a href="mailto:gokulakrishnan.k.cseacet@gmail.com" style={{ color: '#ffd21a', textDecoration: 'none' }}>gokulakrishnan.k.cseacet@gmail.com</a>
+          </span>
+        </div>
+      </div>
+      <div className="footer-links">
         <div>
-          <Brand />
-          <p>
-            Private-by-design document workstation. Process, convert, and edit documents with 100% on-device browser acceleration.
-          </p>
-          <div className="trust-row" style={{ marginTop: '20px' }}>
-            <span className="trust-item"><ShieldCheckIcon size={16} /> Zero Cloud Uploads</span>
-            <span className="trust-item"><CpuIcon size={16} /> Client-Side Engine</span>
-          </div>
+          <strong>Document Tools</strong>
+          <Link to="/tools">All Tools</Link>
+          <Link to="/tools/merge-pdf">Merge PDF</Link>
+          <Link to="/tools/split-pdf">Split PDF</Link>
+          <Link to="/tools/pdf-editor">PDF Editor</Link>
+          <Link to="/pricing">Pricing Plans</Link>
         </div>
-        <div className="footer-links">
-          <div>
-            <strong>Document Tools</strong>
-            <Link to="/tools">All Tools</Link>
-            <Link to="/tools/merge-pdf">Merge PDF</Link>
-            <Link to="/tools/split-pdf">Split PDF</Link>
-            <Link to="/tools/pdf-editor">PDF Editor</Link>
-            <Link to="/pricing">Pricing Plans</Link>
-          </div>
-          <div>
-            <strong>Support</strong>
-            <button 
-              type="button" 
-              onClick={() => setBugModalOpen(true)}
-              style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', font: 'inherit', color: '#a3a3a3', cursor: 'pointer', transition: 'color 0.2s ease' }}
-              onMouseOver={(e) => (e.currentTarget.style.color = '#ffd21a')}
-              onMouseOut={(e) => (e.currentTarget.style.color = '#a3a3a3')}
-            >
-              Report a Bug
-            </button>
-            <a href="mailto:gokulakrishnan.k.cseacet@gmail.com?subject=Website%20Contact">Contact Developer</a>
-            <Link to="/help">Help Center</Link>
-            <Link to="/support">Technical Support</Link>
-          </div>
-          <div>
-            <strong>Legal & Trust</strong>
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/security">Security Architecture</Link>
-            <Link to="/responsible-disclosure">Security Disclosure</Link>
-          </div>
+        <div>
+          <strong>Support & Help</strong>
+          <button type="button" className="footer-action-btn" onClick={openReportBug}>
+            <BugIcon size={14} color="#ffd21a" />
+            <span>Report a Bug</span>
+          </button>
+          <button type="button" className="footer-action-btn" onClick={openContactDeveloper}>
+            <MailIcon size={14} color="#ffd21a" />
+            <span>Contact Developer</span>
+          </button>
+          <Link to="/support">Technical Support</Link>
+          <Link to="/help">Help Center</Link>
+          <Link to="/responsible-disclosure">Security Disclosure</Link>
         </div>
-        
-        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid rgba(255, 255, 255, 0.08)', marginTop: '30px', paddingTop: '20px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <strong style={{ color: '#ffffff', fontSize: '13px' }}>Developer Contact</strong><br/>
-            <span style={{ fontSize: '13px', color: '#a3a3a3' }}>Gokulakrishnan K (gokulakrishnan.k.cseacet@gmail.com)</span>
-          </div>
-          <p className="footer-legal" style={{ margin: 0, marginTop: '2px' }}>
-            © {new Date().getFullYear()} KnowTheFile. Browser-based file processing runs locally on your machine.
-          </p>
+        <div>
+          <strong>Legal & Trust</strong>
+          <Link to="/privacy">Privacy Policy</Link>
+          <Link to="/terms">Terms of Service</Link>
+          <Link to="/security">Security Architecture</Link>
+          <Link to="/accessibility">Accessibility</Link>
         </div>
-      </footer>
-      
-      <ReportBugModal isOpen={isBugModalOpen} onClose={() => setBugModalOpen(false)} />
-    </>
+      </div>
+      <p className="footer-legal">
+        © {new Date().getFullYear()} KnowTheFile. Engineered by Gokulakrishnan K. Browser-based file processing runs locally on your machine.
+      </p>
+    </footer>
   )
 }
